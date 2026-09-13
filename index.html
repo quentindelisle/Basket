@@ -1,0 +1,1390 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TirScore</title>
+<meta name="description" content="Saisie des scores de tir et classement d'équipes pour l'EPS — application hors-ligne, données stockées sur l'appareil.">
+<meta name="theme-color" content="#ff4d1c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root{
+  --bg:#f3f5f1;
+  --surface:#ffffff;
+  --surface-2:#edf1ea;
+  --ink:#12181a;
+  --ink-dim:#57655f;
+  --border:#dbe2d8;
+  --accent:#ff4d1c;
+  --accent2:#0a6dff;
+  --accent-ink:#ffffff;
+  --accent-soft:#ffe2d4;
+  --warn:#ffb200;
+  --danger:#ef233c;
+  --danger-soft:#ffdce1;
+  --good:#0fb85c;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(20,30,25,.07), 0 8px 22px -10px rgba(20,30,25,.22);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1210;
+    --surface:#171e1a;
+    --surface-2:#1d2621;
+    --ink:#f2f6f2;
+    --ink-dim:#aab8b0;
+    --border:#2c3831;
+    --accent:#ff6a3d;
+    --accent2:#4d94ff;
+    --accent-ink:#1a0800;
+    --accent-soft:#3d2013;
+    --warn:#ffc94d;
+    --danger:#ff6b7a;
+    --danger-soft:#3c1a1f;
+    --good:#3fe08a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 26px -10px rgba(0,0,0,.65);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1210;
+  --surface:#171e1a;
+  --surface-2:#1d2621;
+  --ink:#f2f6f2;
+  --ink-dim:#aab8b0;
+  --border:#2c3831;
+  --accent:#ff6a3d;
+  --accent2:#4d94ff;
+  --accent-ink:#1a0800;
+  --accent-soft:#3d2013;
+  --warn:#ffc94d;
+  --danger:#ff6b7a;
+  --danger-soft:#3c1a1f;
+  --good:#3fe08a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 26px -10px rgba(0,0,0,.65);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Manrope',system-ui,sans-serif;
+  padding-inline:16px;
+}
+h1,h2,h3,.display{
+  font-family:'Oswald',"Arial Narrow",sans-serif;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+  text-wrap:balance;
+  margin:0;
+}
+#app{max-width:960px;margin:0 auto;padding-block:20px 48px;}
+.hidden{display:none!important;}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid transparent;border-image:linear-gradient(90deg,var(--accent),var(--accent2),var(--good)) 1;}
+.brand{display:flex;align-items:baseline;gap:8px;}
+.brand .logo-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block;}
+.brand-logo{height:44px;width:auto;border-radius:9px;display:block;}
+.brand h1.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;}
+.brand h1{font-size:20px;color:var(--ink);}
+.brand .tag{font-family:'Manrope';text-transform:none;font-size:12px;color:var(--ink-dim);letter-spacing:0;}
+.btn{
+  font-family:'Manrope';font-weight:700;font-size:14px;
+  border:1px solid var(--border);background:var(--surface);color:var(--ink);
+  border-radius:10px;padding:10px 16px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:8px;justify-content:center;
+}
+.btn:hover{border-color:var(--accent);}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#ff2d6b);color:var(--accent-ink);border-color:transparent;box-shadow:0 4px 14px -4px rgba(255,77,28,.55);}
+.btn.primary:hover{filter:brightness(1.06);}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--ink-dim);}
+.btn.danger{color:var(--danger);border-color:var(--danger);background:transparent;}
+.btn.big{padding:20px 22px;font-size:17px;border-radius:16px;min-height:64px;width:100%;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;}
+.stack{display:flex;flex-direction:column;gap:14px;}
+.grid{display:grid;gap:14px;}
+.center{max-width:560px;margin:0 auto;}
+.muted{color:var(--ink-dim);font-size:14px;}
+.eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--accent);font-weight:600;}
+
+.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
+.team-swatch{
+  border:none;border-radius:16px;padding:22px 12px;min-height:96px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  color:#fff;font-family:'Oswald';font-weight:600;font-size:17px;text-transform:uppercase;letter-spacing:.03em;
+  box-shadow:var(--shadow);
+}
+.team-swatch small{font-family:'Manrope';text-transform:none;font-weight:600;font-size:12px;opacity:.85;letter-spacing:0;}
+.team-swatch:focus-visible{outline:3px solid var(--ink);outline-offset:2px;}
+
+.name-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;}
+.name-btn{
+  border-radius:12px;border:2px solid var(--border);background:var(--surface);
+  padding:16px 10px;font-weight:700;font-size:15px;cursor:pointer;color:var(--ink);
+}
+.name-btn:hover{border-color:var(--accent);}
+
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;}
+.chip.outline{background:transparent;border:1px solid var(--border);color:var(--ink-dim);font-weight:600;}
+
+.serie-card{border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface-2);}
+.serie-score{font-family:'Oswald';font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--good);}
+.serie-empty{color:var(--ink-dim);font-size:14px;}
+
+.slider-wrap{text-align:center;padding:14px 4px;}
+.slider-value{font-family:'Oswald';font-size:64px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;margin-bottom:18px;}
+input[type=range]{width:100%;height:44px;accent-color:var(--accent);}
+.slider-scale{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-dim);margin-top:4px;}
+
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:0;}
+.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 4px;margin-right:14px;font-family:'Oswald';text-transform:uppercase;letter-spacing:.04em;font-size:13px;color:var(--ink-dim);cursor:pointer;}
+.tab-btn.active{color:var(--ink);border-color:var(--accent);}
+
+.field{display:flex;flex-direction:column;gap:5px;}
+.field label{font-size:12px;font-weight:700;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.04em;}
+.field input,.field select{
+  font-family:'Manrope';font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink);
+}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.row>.field{flex:1;min-width:120px;}
+
+table{border-collapse:collapse;width:100%;font-size:14px;}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;}
+th{font-family:'Oswald';text-transform:uppercase;font-size:11px;letter-spacing:.06em;color:var(--ink-dim);}
+.table-wrap{overflow-x:auto;}
+tr.rank-1 td{background:var(--accent-soft);}
+
+.list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.list-row:last-child{border-bottom:none;}
+.iconbtn{background:transparent;border:none;color:var(--ink-dim);cursor:pointer;font-size:16px;padding:4px 8px;border-radius:8px;}
+.iconbtn:hover{color:var(--danger);background:var(--danger-soft);}
+
+.banner{border-radius:12px;padding:12px 16px;font-size:14px;display:flex;gap:10px;align-items:center;}
+.banner.info{background:var(--accent-soft);color:var(--ink);}
+.banner.warn{background:var(--danger-soft);color:var(--ink);}
+
+.empty{text-align:center;padding:40px 20px;color:var(--ink-dim);}
+
+@media (max-width:520px){
+  .slider-value{font-size:48px;}
+  .row{flex-direction:column;align-items:stretch;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand">
+      <img src="logo.png" alt="Basket N'EPS" class="brand-logo">
+      <h1 class="sr-only">TirScore</h1>
+    </div>
+    <div class="btn-row" id="topbar-actions"></div>
+  </div>
+  <div id="screen"><div class="empty">Chargement…</div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+var TEAM_COLORS = [
+  {id:'noir', label:'Noir', hex:'#1c1d1f', text:'#ffffff'},
+  {id:'rouge', label:'Rouge', hex:'#df3b3f', text:'#ffffff'},
+  {id:'vert', label:'Vert', hex:'#2f9e44', text:'#ffffff'},
+  {id:'jaune', label:'Jaune', hex:'#f0c419', text:'#1c1d1f'},
+  {id:'bleu-fonce', label:'Bleu foncé', hex:'#173d8c', text:'#ffffff'},
+  {id:'bleu-ciel', label:'Bleu ciel', hex:'#5bc0e8', text:'#0c2733'},
+  {id:'orange', label:'Orange', hex:'#e0710c', text:'#ffffff'},
+  {id:'blanc', label:'Blanc', hex:'#ffffff', text:'#1c1d1f', border:true},
+  {id:'violet', label:'Violet', hex:'#8b5cf6', text:'#ffffff'}
+];
+function swatchStyle(c){
+  var text = c.text || '#ffffff';
+  var border = c.border ? 'border:2px solid var(--ink-dim);' : '';
+  return 'background:'+c.hex+';color:'+text+';'+border;
+}
+
+var state = {
+  db: null,
+  dbReady: false,
+  view: 'home',
+  classes: [],
+  config: {activeClassId:null, activeSeanceId:null},
+  subscribedClassId: null,
+  teams: [],
+  students: [],
+  seances: [],
+  tirs: [],
+  matches: [],
+  adminClassId: null,
+  adminTab: 'equipes',
+  student: {teamId:null, studentId:null},
+  saisieSerie: null,
+  saisieValue: 0,
+  msg: null,
+  profSeanceFilter: null,
+  classementScope: 'all',
+  classementResult: null,
+  classementTirScope: 'all',
+  classementTirResult: null,
+  matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0}
+};
+
+var unsubs = {};
+function watch(key, colPath, cb){
+  if (unsubs[key]) { unsubs[key](); delete unsubs[key]; }
+  if (!colPath || !state.db) { cb([]); return; }
+  try{
+    unsubs[key] = state.db.collection(colPath).onSnapshot(
+      function(snap){
+        var list = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+        cb(list);
+      },
+      function(err){ console.error('watch', key, err); }
+    );
+  }catch(e){ console.error('watch build', key, e); cb([]); }
+}
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtNum(v, step){
+  var dec = (step && step % 1 !== 0) ? 1 : 0;
+  return Number(v).toFixed(dec).replace('.', ',');
+}
+function colorOf(teamId){
+  return TEAM_COLORS.find(function(c){return c.id===teamId;}) || {label:teamId, hex:'#888'};
+}
+function teamById(id){ return state.teams.find(function(t){return t.id===id;}); }
+function studentById(id){ return state.students.find(function(s){return s.id===id;}); }
+function seanceById(id){ return state.seances.find(function(s){return s.id===id;}); }
+function activeSeance(){ return seanceById(state.config.activeSeanceId); }
+function activeClass(){ return state.classes.find(function(c){return c.id===state.config.activeClassId;}); }
+function studentsOfTeam(teamId){ return state.students.filter(function(s){return s.teamId===teamId;}); }
+function tirFor(seanceId, studentId){ return state.tirs.find(function(t){return t.seanceId===seanceId && t.studentId===studentId;}); }
+
+function setView(v, extra){
+  state.view = v;
+  if (extra) Object.assign(state, extra);
+  render();
+}
+function flash(text, kind){
+  state.msg = {text:text, kind:kind||'info'};
+  render();
+  setTimeout(function(){ state.msg=null; var b=document.getElementById('flash-msg'); if(b) b.remove(); }, 3200);
+}
+
+function ensureClassSubscribed(classId){
+  if (state.subscribedClassId === classId) return;
+  state.subscribedClassId = classId;
+  if (!classId){
+    watch('teams', null, function(l){ state.teams=l; render(); });
+    watch('students', null, function(l){ state.students=l; render(); });
+    watch('seances', null, function(l){ state.seances=l; render(); });
+    watch('tirs', null, function(l){ state.tirs=l; render(); });
+    watch('matches', null, function(l){ state.matches=l; render(); });
+    return;
+  }
+  watch('teams', 'classes/'+classId+'/teams', function(l){ state.teams=l; render(); });
+  watch('students', 'classes/'+classId+'/students', function(l){ state.students=l; render(); });
+  watch('seances', 'classes/'+classId+'/seances', function(l){ state.seances=l; render(); });
+  watch('tirs', 'classes/'+classId+'/tirs', function(l){ state.tirs=l; render(); });
+  watch('matches', 'classes/'+classId+'/matches', function(l){ state.matches=l; render(); });
+}
+
+// ---------- stockage local (hors Claude : GitHub Pages, usage hors-ligne) ----------
+// Implémente le même sous-ensemble d'API que la capability "db" de Claude
+// (doc/collection/get/set/update/delete/onSnapshot/where), mais persiste
+// dans localStorage sur l'appareil. Utilisé automatiquement quand l'app
+// tourne en dehors d'un artifact Claude (window.claude absent).
+function LocalDb(){
+  var STORAGE_KEY = 'tirscore-data-v1';
+  var store = {};
+  var listeners = {};
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) store = JSON.parse(raw) || {};
+    }catch(e){ console.error('LocalDb load', e); store = {}; }
+  }
+  function persist(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }catch(e){ console.error('LocalDb persist', e); }
+  }
+  load();
+
+  function collectionDocs(colPath){
+    var col = store[colPath] || {};
+    return Object.keys(col).map(function(id){ return {id:id, data:col[id]}; });
+  }
+  function makeSnapshot(id, data){
+    return {
+      id:id, exists: data !== undefined,
+      data: function(){ return data; },
+      metadata:{fromCache:false, hasPendingWrites:false}
+    };
+  }
+  function notifyCollection(colPath){
+    (listeners[colPath] || []).forEach(function(cb){ cb(collectionDocs(colPath)); });
+  }
+  function notifyDoc(colPath, id){
+    var key = colPath+'::doc::'+id;
+    (listeners[key] || []).forEach(function(cb){ cb(); });
+  }
+
+  function docRef(path){
+    var parts = path.split('/').filter(Boolean);
+    var id = parts[parts.length-1];
+    var colPath = parts.slice(0,-1).join('/');
+    return {
+      id:id, path:path,
+      get: function(){
+        var col = store[colPath] || {};
+        return Promise.resolve(makeSnapshot(id, col[id]));
+      },
+      set: function(data){
+        if (!store[colPath]) store[colPath] = {};
+        store[colPath][id] = JSON.parse(JSON.stringify(data));
+        persist(); notifyCollection(colPath); notifyDoc(colPath, id);
+        return Promise.resolve();
+      },
+      update: function(data){
+        if (!store[colPath] || store[colPath][id] === undefined){
+          return Promise.reject({code:'invalid_argument', message:'Document introuvable'});
+        }
+        Object.assign(store[colPath][id], JSON.parse(JSON.stringify(data)));
+        persist(); notifyCollection(colPath); notifyDoc(colPath, id);
+        return Promise.resolve();
+      },
+      delete: function(){
+        if (store[colPath]) delete store[colPath][id];
+        persist(); notifyCollection(colPath); notifyDoc(colPath, id);
+        return Promise.resolve();
+      },
+      onSnapshot: function(next){
+        var key = colPath+'::doc::'+id;
+        if (!listeners[key]) listeners[key] = [];
+        var cb = function(){
+          var col = store[colPath] || {};
+          next(makeSnapshot(id, col[id]));
+        };
+        listeners[key].push(cb);
+        cb();
+        return function(){
+          var arr = listeners[key]; var i = arr.indexOf(cb);
+          if (i>-1) arr.splice(i,1);
+        };
+      }
+    };
+  }
+
+  function queryRef(colPath, filters){
+    filters = filters || [];
+    function applyFilters(raw){
+      return raw.filter(function(d){
+        return filters.every(function(f){
+          var v = d.data ? d.data[f.field] : undefined;
+          return f.op === '==' ? v === f.value : true;
+        });
+      });
+    }
+    return {
+      path: colPath,
+      where: function(field, op, value){ return queryRef(colPath, filters.concat([{field:field, op:op, value:value}])); },
+      get: function(){
+        var docsOut = applyFilters(collectionDocs(colPath)).map(function(d){ return makeSnapshot(d.id, d.data); });
+        return Promise.resolve({docs:docsOut, size:docsOut.length, empty:docsOut.length===0});
+      },
+      onSnapshot: function(next){
+        var cb = function(raw){
+          var docsOut = applyFilters(raw).map(function(d){ return makeSnapshot(d.id, d.data); });
+          next({docs:docsOut, size:docsOut.length, empty:docsOut.length===0, docChanges:function(){return [];}});
+        };
+        if (!listeners[colPath]) listeners[colPath] = [];
+        listeners[colPath].push(cb);
+        cb(collectionDocs(colPath));
+        return function(){
+          var arr = listeners[colPath]; var i = arr.indexOf(cb);
+          if (i>-1) arr.splice(i,1);
+        };
+      },
+      doc: function(id){
+        id = id || genId();
+        return docRef(colPath+'/'+id);
+      },
+      add: function(data){
+        var ref = docRef(colPath+'/'+genId());
+        return ref.set(data).then(function(){ return ref; });
+      }
+    };
+  }
+
+  return {
+    doc: function(path){ return docRef(path); },
+    collection: function(path){ return queryRef(path, []); }
+  };
+}
+
+// Équivalent local du téléchargement (capability "downloads" de Claude) :
+// déclenche un téléchargement de fichier classique dans le navigateur.
+var localDownloads = {
+  save: function(req){
+    return new Promise(function(resolve, reject){
+      try{
+        var blob = req.data instanceof Blob ? req.data : new Blob([req.data], {type:'application/octet-stream'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = req.filename || 'export';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+        resolve({status:'saved'});
+      }catch(e){ reject(e); }
+    });
+  }
+};
+function getDb(){
+  if (window.claude && window.claude.use){
+    return window.claude.use('db').then(function(db){ return db || new LocalDb(); }).catch(function(){ return new LocalDb(); });
+  }
+  return Promise.resolve(new LocalDb());
+}
+function getDownloads(){
+  if (window.claude && window.claude.use){
+    return window.claude.use('downloads').then(function(d){ return d || localDownloads; }).catch(function(){ return localDownloads; });
+  }
+  return Promise.resolve(localDownloads);
+}
+
+// ---------- init ----------
+function init(){
+  render();
+  getDb().then(function(db){
+    state.db = db;
+    state.dbReady = true;
+    db.doc('app/config').onSnapshot(function(snap){
+      state.config = snap.exists ? Object.assign({activeClassId:null, activeSeanceId:null}, snap.data()) : {activeClassId:null, activeSeanceId:null};
+      render();
+    }, function(err){ console.error('config', err); });
+    db.collection('classes').onSnapshot(function(snap){
+      state.classes = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      render();
+    }, function(err){ console.error('classes', err); });
+    render();
+  });
+}
+
+// ---------- top bar ----------
+function renderTopbarActions(){
+  var el = document.getElementById('topbar-actions');
+  var html = '';
+  if (state.view !== 'home'){
+    html += '<button class="btn ghost" data-action="go-home">Accueil</button>';
+  }
+  if (state.view.indexOf('prof') !== 0){
+    html += '<button class="btn" data-action="go-prof">Enseignant</button>';
+  } else {
+    html += '<button class="btn" data-action="go-eleve">Espace élève</button>';
+  }
+  el.innerHTML = html;
+}
+
+// ---------- HOME ----------
+function renderHome(){
+  var cls = activeClass();
+  var sea = activeSeance();
+  var statusHtml;
+  if (!cls){
+    statusHtml = '<div class="banner warn">Aucune classe active. Ouvrez l\'espace enseignant pour en créer une.</div>';
+  } else if (!sea){
+    statusHtml = '<div class="banner warn">Classe active : <strong>'+esc(cls.name)+'</strong> — aucune séance ouverte pour le moment.</div>';
+  } else {
+    statusHtml = '<div class="banner info">Classe : <strong>'+esc(cls.name)+'</strong> · Séance : <strong>'+esc(sea.label)+'</strong></div>';
+  }
+  return (
+    '<div class="stack center">' +
+      statusHtml +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Élève</div>' +
+        '<p class="muted">Saisis ton score de tir après ta série.</p>' +
+        '<button class="btn primary big" data-action="go-eleve">Je saisis mon score</button>' +
+      '</div>' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Enseignant</div>' +
+        '<p class="muted">Gérer les classes, les équipes, les séances, les matchs et le classement.</p>' +
+        '<button class="btn big" data-action="go-prof">Espace enseignant</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function renderNoDb(){
+  return '<div class="card empty">Cette page a besoin d\'être ouverte dans Claude pour fonctionner (stockage des scores indisponible ici).</div>';
+}
+
+// ---------- ELEVE : team ----------
+function renderEleveEquipe(){
+  var cls = activeClass();
+  var sea = activeSeance();
+  if (!cls || !sea){
+    return '<div class="card center empty">Aucune séance active pour le moment.<br>Demande à ton enseignant d\'ouvrir une séance.</div>';
+  }
+  if (!state.teams.length){
+    return '<div class="card center empty">Aucune équipe n\'a encore été créée pour cette classe.</div>';
+  }
+  var swatches = state.teams.map(function(t){
+    var c = colorOf(t.id);
+    var n = studentsOfTeam(t.id).length;
+    return '<button class="team-swatch" style="'+swatchStyle(c)+'" data-action="pick-team" data-id="'+t.id+'">'+
+      esc(c.label) + '<small>'+n+' élève'+(n>1?'s':'')+'</small></button>';
+  }).join('');
+  return (
+    '<div class="stack center">' +
+      '<div class="eyebrow">'+esc(sea.label)+'</div>' +
+      '<h2>Choisis la couleur de ton équipe</h2>' +
+      '<div class="team-grid">'+swatches+'</div>' +
+    '</div>'
+  );
+}
+
+// ---------- ELEVE : prenom ----------
+function renderElevePrenom(){
+  var team = teamById(state.student.teamId);
+  var c = colorOf(state.student.teamId);
+  var list = studentsOfTeam(state.student.teamId);
+  var names = list.length ? list.map(function(s){
+    return '<button class="name-btn" data-action="pick-student" data-id="'+s.id+'">'+esc(s.firstName)+'</button>';
+  }).join('') : '<div class="empty">Aucun élève dans cette équipe. Demande à ton enseignant de t\'ajouter.</div>';
+  return (
+    '<div class="stack center">' +
+      '<button class="btn ghost" data-action="go-eleve">&larr; Changer d\'équipe</button>' +
+      '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</div>' +
+      '<h2>Quel est ton prénom ?</h2>' +
+      '<div class="name-grid">'+names+'</div>' +
+    '</div>'
+  );
+}
+
+// ---------- ELEVE : fiche (series status) ----------
+function renderEleveFiche(){
+  var sea = activeSeance();
+  var stu = studentById(state.student.studentId);
+  var c = colorOf(state.student.teamId);
+  if (!sea || !stu){
+    return '<div class="card empty">Séance ou élève introuvable.</div>';
+  }
+  var tir = tirFor(sea.id, stu.id);
+  function serieBlock(n){
+    var key = 'serie'+n;
+    var has = tir && tir[key] != null;
+    if (has){
+      return '<div class="serie-card"><div><strong>Série '+n+'</strong></div><div class="serie-score">'+fmtNum(tir[key], sea.tirStep)+'</div></div>';
+    }
+    return '<div class="serie-card"><div><strong>Série '+n+'</strong><div class="serie-empty">Pas encore saisie</div></div>'+
+      '<button class="btn primary" data-action="start-saisie" data-serie="'+n+'">Saisir</button></div>';
+  }
+  return (
+    '<div class="stack center">' +
+      '<button class="btn ghost" data-action="go-eleve">&larr; Changer d\'élève</button>' +
+      '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</div>' +
+      '<h2>'+esc(stu.firstName)+'</h2>' +
+      '<p class="muted">'+esc(sea.label)+' — deux séries de 10 tirs autorisées.</p>' +
+      serieBlock(1) + serieBlock(2) +
+    '</div>'
+  );
+}
+
+// ---------- ELEVE : saisie (slider) ----------
+function renderEleveSaisie(){
+  var sea = activeSeance();
+  var stu = studentById(state.student.studentId);
+  var min = sea.tirMin != null ? sea.tirMin : 0;
+  var max = sea.tirMax != null ? sea.tirMax : 10;
+  var step = sea.tirStep != null ? sea.tirStep : 0.5;
+  return (
+    '<div class="stack center">' +
+      '<button class="btn ghost" data-action="cancel-saisie">&larr; Annuler</button>' +
+      '<h2>'+esc(stu.firstName)+' — Série '+state.saisieSerie+'</h2>' +
+      '<div class="card slider-wrap">' +
+        '<div class="slider-value" id="slider-display">'+fmtNum(state.saisieValue, step)+'</div>' +
+        '<input type="range" id="score-slider" min="'+min+'" max="'+max+'" step="'+step+'" value="'+state.saisieValue+'">' +
+        '<div class="slider-scale"><span>'+fmtNum(min, step)+'</span><span>'+fmtNum(max, step)+'</span></div>' +
+      '</div>' +
+      '<button class="btn primary big" data-action="valider-saisie">Valider ma série</button>' +
+    '</div>'
+  );
+}
+
+// ---------- PROF ----------
+function renderProf(){
+  var tabs = [
+    ['classes','Classes'],
+    ['equipes','Équipes & élèves'],
+    ['seances','Séances'],
+    ['resultats','Résultats tir'],
+    ['matchs','Matchs'],
+    ['classement-tir','Classement précision'],
+    ['classement','Classement matchs']
+  ];
+  var tabsHtml = tabs.map(function(t){
+    return '<button class="tab-btn'+(state.adminTab===t[0]?' active':'')+'" data-action="prof-tab" data-tab="'+t[0]+'">'+t[1]+'</button>';
+  }).join('');
+  var body;
+  switch(state.adminTab){
+    case 'classes': body = renderProfClasses(); break;
+    case 'equipes': body = renderProfEquipes(); break;
+    case 'seances': body = renderProfSeances(); break;
+    case 'resultats': body = renderProfResultats(); break;
+    case 'matchs': body = renderProfMatchs(); break;
+    case 'classement-tir': body = renderProfClassementTir(); break;
+    case 'classement': body = renderProfClassement(); break;
+    default: body = '';
+  }
+  return '<div><div class="tabs">'+tabsHtml+'</div><div id="prof-body">'+body+'</div></div>';
+}
+
+function renderProfClasses(){
+  var rows = state.classes.map(function(c){
+    var isActive = c.id === state.config.activeClassId;
+    var isEditing = c.id === state.adminClassId;
+    return '<div class="list-row">' +
+      '<div><strong>'+esc(c.name)+'</strong>'+(isActive?' <span class="chip" style="background:var(--accent)">active pour les élèves</span>':'')+'</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn'+(isEditing?' primary':'')+'" data-action="select-admin-class" data-id="'+c.id+'">Gérer</button>' +
+        (isActive ? '' : '<button class="btn" data-action="set-active-class" data-id="'+c.id+'">Activer pour les élèves</button>') +
+        '<button class="iconbtn" data-action="delete-class" data-id="'+c.id+'" title="Supprimer">✕</button>' +
+      '</div>' +
+    '</div>';
+  }).join('') || '<div class="empty">Aucune classe pour le moment.</div>';
+  return (
+    '<div class="stack">' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Nouvelle classe</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Nom de la classe</label><input id="new-class-name" placeholder="ex. 2GT3"></div>' +
+          '<button class="btn primary" data-action="create-class">Créer</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card">'+rows+'</div>' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Sauvegarde</div>' +
+        '<p class="muted">Télécharge toutes les classes, équipes, élèves, séances, résultats de tir et matchs dans un seul fichier JSON — à conserver comme sauvegarde, ou pour transférer les données vers un autre appareil.</p>' +
+        '<div class="btn-row">' +
+          '<button class="btn" data-action="export-json-backup">Télécharger la sauvegarde complète (JSON)</button>' +
+          '<button class="btn" data-action="trigger-import">Restaurer une sauvegarde JSON…</button>' +
+          '<input type="file" id="backup-file-input" accept="application/json" class="hidden" data-action="import-json-backup">' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function requireAdminClass(){
+  if (!state.adminClassId){
+    return '<div class="card empty">Choisissez d\'abord une classe dans l\'onglet « Classes ».</div>';
+  }
+  return null;
+}
+
+function renderProfEquipes(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var activeIds = state.teams.map(function(t){return t.id;});
+  var swatches = TEAM_COLORS.map(function(c){
+    var on = activeIds.indexOf(c.id) !== -1;
+    return '<button class="team-swatch" style="'+swatchStyle(c)+';opacity:'+(on?'1':'.35')+'" data-action="toggle-team" data-id="'+c.id+'">'+
+      esc(c.label) + '<small>'+(on?'utilisée — cliquer pour retirer':'cliquer pour activer')+'</small></button>';
+  }).join('');
+  var rosters = state.teams.map(function(t){
+    var c = colorOf(t.id);
+    var students = studentsOfTeam(t.id);
+    var list = students.map(function(s){
+      return '<div class="list-row"><span>'+esc(s.firstName)+'</span><button class="iconbtn" data-action="delete-student" data-id="'+s.id+'">✕</button></div>';
+    }).join('') || '<div class="muted">Aucun élève.</div>';
+    return '<div class="card stack">' +
+      '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+' · '+students.length+'</div>' +
+      list +
+      '<div class="row"><div class="field"><input placeholder="Prénom" id="new-student-'+t.id+'"></div>' +
+      '<button class="btn" data-action="add-student" data-team="'+t.id+'">Ajouter</button></div>' +
+    '</div>';
+  }).join('');
+  return (
+    '<div class="stack">' +
+      '<div class="card stack"><div class="eyebrow">Équipes (3-4 élèves par équipe)</div><div class="team-grid">'+swatches+'</div></div>' +
+      '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">'+(rosters || '<div class="empty">Activez une couleur ci-dessus pour commencer.</div>')+'</div>' +
+    '</div>'
+  );
+}
+
+function lastSeanceDefaults(){
+  if (!state.seances.length) return {tirMin:0, tirMax:10, tirStep:0.5};
+  var s = state.seances.slice().sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); })[0];
+  return {tirMin:s.tirMin!=null?s.tirMin:0, tirMax:s.tirMax!=null?s.tirMax:10, tirStep:s.tirStep!=null?s.tirStep:0.5};
+}
+
+function renderProfSeances(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var d = lastSeanceDefaults();
+  var today = new Date().toISOString().slice(0,10);
+  var rows = state.seances.slice().sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);}).map(function(s){
+    var isActive = s.id === state.config.activeSeanceId;
+    return '<div class="list-row"><div>' +
+      '<strong>'+esc(s.label)+'</strong> <span class="muted">('+esc(s.date||'')+') — curseur '+fmtNum(s.tirMin,s.tirStep)+' à '+fmtNum(s.tirMax,s.tirStep)+', pas '+fmtNum(s.tirStep,s.tirStep)+'</span>' +
+      (isActive ? ' <span class="chip" style="background:var(--accent)">active</span>' : '') +
+      '</div><div class="btn-row">' +
+      (isActive ? '' : '<button class="btn" data-action="set-active-seance" data-id="'+s.id+'">Activer</button>') +
+      '<button class="iconbtn" data-action="delete-seance" data-id="'+s.id+'">✕</button>' +
+      '</div></div>';
+  }).join('') || '<div class="empty">Aucune séance créée.</div>';
+  return (
+    '<div class="stack">' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Nouvelle séance</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Intitulé</label><input id="new-seance-label" placeholder="ex. Séance du '+today+'"></div>' +
+          '<div class="field"><label>Date</label><input type="date" id="new-seance-date" value="'+today+'"></div>' +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Curseur min</label><input type="number" step="any" id="new-seance-min" value="'+d.tirMin+'"></div>' +
+          '<div class="field"><label>Curseur max</label><input type="number" step="any" id="new-seance-max" value="'+d.tirMax+'"></div>' +
+          '<div class="field"><label>Pas</label><input type="number" step="any" id="new-seance-step" value="'+d.tirStep+'"></div>' +
+          '<button class="btn primary" data-action="create-seance">Créer et activer</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card">'+rows+'</div>' +
+    '</div>'
+  );
+}
+
+function renderProfResultats(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var filterId = state.profSeanceFilter;
+  var options = '<option value="">Toutes les séances</option>' + state.seances.map(function(s){
+    return '<option value="'+s.id+'"'+(filterId===s.id?' selected':'')+'>'+esc(s.label)+'</option>';
+  }).join('');
+  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+  var rows = tirs.map(function(t){
+    var stu = studentById(t.studentId);
+    var sea = seanceById(t.seanceId);
+    var c = colorOf(t.teamId);
+    if (!stu || !sea) return '';
+    return '<tr><td>'+esc(sea.label)+'</td><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+      '<td>'+esc(stu.firstName)+'</td>' +
+      '<td>'+(t.serie1!=null?fmtNum(t.serie1,sea.tirStep):'—')+'</td>' +
+      '<td>'+(t.serie2!=null?fmtNum(t.serie2,sea.tirStep):'—')+'</td>' +
+      '<td><button class="iconbtn" data-action="delete-tir" data-id="'+t.id+'">✕</button></td></tr>';
+  }).join('') || '<tr><td colspan="6" class="empty">Aucun résultat pour le moment.</td></tr>';
+  return (
+    '<div class="stack">' +
+      '<div class="row">' +
+        '<div class="field"><label>Filtrer par séance</label><select id="resultats-filter" data-action="filter-resultats">'+options+'</select></div>' +
+        '<button class="btn" data-action="export-csv">Exporter en CSV</button>' +
+        '<button class="btn" data-action="export-xlsx">Exporter en Excel (.xlsx)</button>' +
+      '</div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Séance</th><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+    '</div>'
+  );
+}
+
+function renderProfMatchs(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  if (!state.seances.length) return '<div class="card empty">Créez d\'abord une séance.</div>';
+  if (state.teams.length < 2) return '<div class="card empty">Il faut au moins deux équipes pour saisir un match.</div>';
+  var f = state.matchForm;
+  if (!f.seanceId) f.seanceId = state.config.activeSeanceId || state.seances[0].id;
+  if (!f.teamA) f.teamA = state.teams[0].id;
+  if (!f.teamB) f.teamB = (state.teams[1]||state.teams[0]).id;
+  var seaOpts = state.seances.map(function(s){ return '<option value="'+s.id+'"'+(f.seanceId===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
+  var teamOptsA = state.teams.map(function(t){ var c=colorOf(t.id); return '<option value="'+t.id+'"'+(f.teamA===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
+  var teamOptsB = state.teams.map(function(t){ var c=colorOf(t.id); return '<option value="'+t.id+'"'+(f.teamB===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
+  var list = state.matches.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).map(function(m){
+    var sea = seanceById(m.seanceId);
+    var ca = colorOf(m.teamAId), cb = colorOf(m.teamBId);
+    return '<div class="list-row"><div>' +
+      '<span class="muted">'+esc(sea?sea.label:'?')+'</span> — ' +
+      '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span> ' + m.scoreA + ' – ' + m.scoreB + ' ' +
+      '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
+      '</div><button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button></div>';
+  }).join('') || '<div class="empty">Aucun match saisi.</div>';
+  return (
+    '<div class="stack">' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Nouveau match</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Séance</label><select id="match-seance" data-action="match-field" data-f="seanceId">'+seaOpts+'</select></div>' +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Équipe A</label><select id="match-teamA" data-action="match-field" data-f="teamA">'+teamOptsA+'</select></div>' +
+          '<div class="field"><label>Score A</label><input type="number" id="match-scoreA" value="'+f.scoreA+'"></div>' +
+          '<div class="field"><label>Score B</label><input type="number" id="match-scoreB" value="'+f.scoreB+'"></div>' +
+          '<div class="field"><label>Équipe B</label><select id="match-teamB" data-action="match-field" data-f="teamB">'+teamOptsB+'</select></div>' +
+        '</div>' +
+        '<button class="btn primary" data-action="add-match">Ajouter le match</button>' +
+      '</div>' +
+      '<div class="card">'+list+'</div>' +
+    '</div>'
+  );
+}
+
+function computeRanking(scopeSeanceId){
+  var matches = state.matches.filter(function(m){ return !scopeSeanceId || m.seanceId===scopeSeanceId; });
+  var stats = {};
+  state.teams.forEach(function(t){ stats[t.id] = {teamId:t.id, played:0, wins:0, draws:0, losses:0, goalPos:0}; });
+  matches.forEach(function(m){
+    if (!stats[m.teamAId] || !stats[m.teamBId]) return;
+    var a = stats[m.teamAId], b = stats[m.teamBId];
+    a.played++; b.played++;
+    var diff = m.scoreA - m.scoreB;
+    if (diff > 0) { a.wins++; b.losses++; }
+    else if (diff < 0) { b.wins++; a.losses++; }
+    else { a.draws++; b.draws++; }
+    a.goalPos += Math.max(0, diff);
+    b.goalPos += Math.max(0, -diff);
+  });
+  var maxPlayed = Object.values(stats).reduce(function(m,s){ return Math.max(m, s.played); }, 0);
+  var list = Object.values(stats).map(function(s){
+    var coef = s.played > 0 ? (maxPlayed / s.played) : 0;
+    return Object.assign({}, s, {
+      coef: coef,
+      adjPoints: s.wins * coef,
+      adjGoal: s.goalPos * coef
+    });
+  });
+  list.sort(function(a,b){
+    if (b.adjPoints !== a.adjPoints) return b.adjPoints - a.adjPoints;
+    if (b.adjGoal !== a.adjGoal) return b.adjGoal - a.adjGoal;
+    return colorOf(a.teamId).label.localeCompare(colorOf(b.teamId).label);
+  });
+  return {maxPlayed: maxPlayed, list: list};
+}
+
+function computeTirRanking(scopeSeanceId){
+  var tirs = state.tirs.filter(function(t){ return !scopeSeanceId || t.seanceId===scopeSeanceId; });
+  var byStudent = {};
+  state.students.forEach(function(s){ byStudent[s.id] = {studentId:s.id, teamId:s.teamId, values:[]}; });
+  var byTeam = {};
+  state.teams.forEach(function(t){ byTeam[t.id] = {teamId:t.id, values:[]}; });
+  tirs.forEach(function(t){
+    var vals = [];
+    if (t.serie1 != null) vals.push(t.serie1);
+    if (t.serie2 != null) vals.push(t.serie2);
+    if (!vals.length) return;
+    if (byStudent[t.studentId]) byStudent[t.studentId].values = byStudent[t.studentId].values.concat(vals);
+    if (byTeam[t.teamId]) byTeam[t.teamId].values = byTeam[t.teamId].values.concat(vals);
+  });
+  function toStats(obj, extra){
+    return Object.keys(obj).map(function(k){
+      var e = obj[k];
+      var n = e.values.length;
+      var avg = n ? e.values.reduce(function(a,b){return a+b;},0)/n : null;
+      var best = n ? Math.max.apply(null, e.values) : null;
+      return Object.assign({}, e, extra, {n:n, avg:avg, best:best});
+    });
+  }
+  var students = toStats(byStudent).filter(function(s){ return s.n > 0; });
+  var teams = toStats(byTeam).filter(function(s){ return s.n > 0; });
+  function cmp(a, b){
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    if (b.best !== a.best) return b.best - a.best;
+    return 0;
+  }
+  students.sort(function(a,b){
+    var c = cmp(a,b); if (c) return c;
+    var sa = studentById(a.studentId), sb = studentById(b.studentId);
+    return (sa?sa.firstName:'').localeCompare(sb?sb.firstName:'');
+  });
+  teams.sort(function(a,b){
+    var c = cmp(a,b); if (c) return c;
+    return colorOf(a.teamId).label.localeCompare(colorOf(b.teamId).label);
+  });
+  return {students: students, teams: teams};
+}
+
+function renderProfClassementTir(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var opts = '<option value="all"'+(state.classementTirScope==='all'?' selected':'')+'>Toutes les séances cumulées</option>' +
+    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementTirScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
+  var res = state.classementTirResult;
+  var tables = '';
+  if (res){
+    var sea = state.classementTirScope !== 'all' ? seanceById(state.classementTirScope) : null;
+    var step = sea ? sea.tirStep : (state.seances[0] ? state.seances[0].tirStep : 0.5);
+    var studentRows = res.students.map(function(r, i){
+      var stu = studentById(r.studentId);
+      var c = colorOf(r.teamId);
+      if (!stu) return '';
+      return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td><td>'+esc(stu.firstName)+'</td>' +
+        '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+        '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="empty">Aucun résultat.</td></tr>';
+    var teamRows = res.teams.map(function(r, i){
+      var c = colorOf(r.teamId);
+      return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td>' +
+        '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+        '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">Aucun résultat.</td></tr>';
+    tables =
+      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Élèves</div><table><thead><tr><th>Rang</th><th>Élève</th><th>Équipe</th><th>Séries</th><th>Moyenne</th><th>Meilleure série</th></tr></thead><tbody>'+studentRows+'</tbody></table></div>' +
+      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Équipes</div><table><thead><tr><th>Rang</th><th>Équipe</th><th>Séries</th><th>Moyenne</th><th>Meilleure série</th></tr></thead><tbody>'+teamRows+'</tbody></table></div>';
+  }
+  return (
+    '<div class="stack">' +
+      '<div class="row">' +
+        '<div class="field"><label>Portée</label><select id="classement-tir-scope" data-action="classement-tir-scope">'+opts+'</select></div>' +
+        '<button class="btn primary" data-action="calc-classement-tir">Calculer le classement</button>' +
+      '</div>' +
+      '<p class="muted">Classement de précision au tir, par élève et par équipe, selon la moyenne de toutes les séries saisies sur la portée choisie (la meilleure série départage les égalités).</p>' +
+      tables +
+    '</div>'
+  );
+}
+
+function renderProfClassement(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var opts = '<option value="all"'+(state.classementScope==='all'?' selected':'')+'>Toutes les séances cumulées</option>' +
+    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
+  var res = state.classementResult;
+  var table = '';
+  if (res){
+    var rows = res.list.map(function(r, i){
+      var c = colorOf(r.teamId);
+      return '<tr class="'+(i===0 && r.played>0 ? 'rank-1':'')+'"><td>'+(i+1)+'</td>' +
+        '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+        '<td>'+r.played+'</td><td>'+r.wins+'</td><td>'+r.draws+'</td><td>'+r.losses+'</td>' +
+        '<td>'+r.coef.toFixed(2)+'</td><td>'+r.adjPoints.toFixed(2)+'</td><td>'+r.adjGoal.toFixed(2)+'</td></tr>';
+    }).join('') || '<tr><td colspan="9" class="empty">Aucune équipe.</td></tr>';
+    table = '<div class="card table-wrap"><table><thead><tr><th>Rang</th><th>Équipe</th><th>MJ</th><th>V</th><th>N</th><th>D</th><th>Coef.</th><th>Pts ajustés</th><th>Goal avg. ajusté</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  return (
+    '<div class="stack">' +
+      '<div class="row">' +
+        '<div class="field"><label>Portée</label><select id="classement-scope" data-action="classement-scope">'+opts+'</select></div>' +
+        '<button class="btn primary" data-action="calc-classement">Calculer le classement</button>' +
+      '</div>' +
+      '<p class="muted">Classement = victoires × coefficient de rattrapage (matchs joués par l\'équipe la plus active ÷ matchs joués par l\'équipe), en cas d\'égalité le goal average positif (points marqués au-delà de l\'adversaire, jamais négatif) ajusté du même coefficient départage.</p>' +
+      table +
+    '</div>'
+  );
+}
+
+// ---------- render dispatch ----------
+function render(){
+  renderTopbarActions();
+  var screen = document.getElementById('screen');
+  var html;
+  switch(state.view){
+    case 'nodb': html = renderNoDb(); break;
+    case 'home': html = renderHome(); break;
+    case 'eleve-equipe': html = renderEleveEquipe(); break;
+    case 'eleve-prenom': html = renderElevePrenom(); break;
+    case 'eleve-fiche': html = renderEleveFiche(); break;
+    case 'eleve-saisie': html = renderEleveSaisie(); break;
+    case 'prof': html = renderProf(); break;
+    default: html = renderHome();
+  }
+  if (state.msg){
+    html = '<div id="flash-msg" class="banner '+(state.msg.kind==='error'?'warn':'info')+'" style="margin-bottom:14px">'+esc(state.msg.text)+'</div>' + html;
+  }
+  screen.innerHTML = html;
+  wireDynamic();
+}
+
+function wireDynamic(){
+  var slider = document.getElementById('score-slider');
+  if (slider){
+    slider.addEventListener('input', function(){
+      state.saisieValue = parseFloat(slider.value);
+      var disp = document.getElementById('slider-display');
+      var sea = activeSeance();
+      if (disp) disp.textContent = fmtNum(state.saisieValue, sea ? sea.tirStep : 0.5);
+    });
+  }
+}
+
+// ---------- actions ----------
+function genId(){ return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+function handleAction(action, el){
+  var db = state.db;
+  switch(action){
+    case 'go-home': setView('home'); break;
+    case 'go-eleve':
+      ensureClassSubscribed(state.config.activeClassId);
+      setView('eleve-equipe', {student:{teamId:null, studentId:null}});
+      break;
+    case 'go-prof':
+      if (!state.adminClassId && state.classes.length) state.adminClassId = state.config.activeClassId || state.classes[0].id;
+      ensureClassSubscribed(state.adminClassId);
+      setView('prof');
+      break;
+    case 'pick-team':
+      state.student.teamId = el.getAttribute('data-id');
+      setView('eleve-prenom');
+      break;
+    case 'pick-student':
+      state.student.studentId = el.getAttribute('data-id');
+      setView('eleve-fiche');
+      break;
+    case 'start-saisie':
+      state.saisieSerie = parseInt(el.getAttribute('data-serie'), 10);
+      var sea = activeSeance();
+      state.saisieValue = sea && sea.tirMin != null ? sea.tirMin + (sea.tirMax - sea.tirMin) / 2 : 5;
+      setView('eleve-saisie');
+      break;
+    case 'cancel-saisie': setView('eleve-fiche'); break;
+    case 'valider-saisie': validerSaisie(); break;
+
+    case 'prof-tab': state.adminTab = el.getAttribute('data-tab'); state.classementResult=null; state.classementTirResult=null; render(); break;
+    case 'select-admin-class':
+      state.adminClassId = el.getAttribute('data-id');
+      ensureClassSubscribed(state.adminClassId);
+      render();
+      break;
+    case 'create-class': createClass(); break;
+    case 'delete-class': deleteClass(el.getAttribute('data-id')); break;
+    case 'set-active-class':
+      db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: el.getAttribute('data-id'), activeSeanceId: null}));
+      flash('Classe activée pour les élèves.');
+      break;
+
+    case 'toggle-team': toggleTeam(el.getAttribute('data-id')); break;
+    case 'add-student': addStudent(el.getAttribute('data-team')); break;
+    case 'delete-student': db.doc('classes/'+state.adminClassId+'/students/'+el.getAttribute('data-id')).delete(); break;
+
+    case 'create-seance': createSeance(); break;
+    case 'delete-seance': deleteSeance(el.getAttribute('data-id')); break;
+    case 'set-active-seance':
+      db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: el.getAttribute('data-id')}));
+      flash('Séance activée pour les élèves.');
+      break;
+
+    case 'filter-resultats': state.profSeanceFilter = el.value || null; render(); break;
+    case 'export-csv': exportCsv(); break;
+    case 'export-xlsx': exportXlsx(); break;
+    case 'export-json-backup': exportJsonBackup(); break;
+    case 'trigger-import': document.getElementById('backup-file-input').click(); break;
+    case 'import-json-backup': importJsonBackup(el.files && el.files[0]); break;
+    case 'delete-tir': db.doc('classes/'+state.adminClassId+'/tirs/'+el.getAttribute('data-id')).delete(); break;
+
+    case 'match-field': state.matchForm[el.getAttribute('data-f')] = el.value; render(); break;
+    case 'add-match': addMatch(); break;
+    case 'delete-match': db.doc('classes/'+state.adminClassId+'/matches/'+el.getAttribute('data-id')).delete(); break;
+
+    case 'classement-scope': state.classementScope = el.value; state.classementResult = null; render(); break;
+    case 'calc-classement':
+      state.classementResult = computeRanking(state.classementScope === 'all' ? null : state.classementScope);
+      render();
+      break;
+    case 'classement-tir-scope': state.classementTirScope = el.value; state.classementTirResult = null; render(); break;
+    case 'calc-classement-tir':
+      state.classementTirResult = computeTirRanking(state.classementTirScope === 'all' ? null : state.classementTirScope);
+      render();
+      break;
+  }
+}
+
+function validerSaisie(){
+  var db = state.db;
+  var sea = activeSeance();
+  var stu = studentById(state.student.studentId);
+  if (!db || !sea || !stu) return;
+  var docId = sea.id + '_' + stu.id;
+  var ref = db.doc('classes/'+state.config.activeClassId+'/tirs/'+docId);
+  var field = 'serie' + state.saisieSerie;
+  var payload = {}; payload[field] = state.saisieValue; payload['ts'+state.saisieSerie] = Date.now();
+  ref.get().then(function(snap){
+    if (snap.exists){
+      return ref.update(payload);
+    }
+    var full = Object.assign({seanceId: sea.id, studentId: stu.id, teamId: stu.teamId}, payload);
+    return ref.set(full);
+  }).then(function(){
+    flash('Score enregistré.');
+    setView('eleve-fiche');
+  }).catch(function(e){
+    console.error(e);
+    flash('Erreur lors de l\'enregistrement.', 'error');
+  });
+}
+function createClass(){
+  var input = document.getElementById('new-class-name');
+  var name = input.value.trim();
+  if (!name) return;
+  state.db.collection('classes').add({name: name, createdAt: Date.now()}).then(function(ref){
+    state.adminClassId = ref.id;
+    ensureClassSubscribed(ref.id);
+    render();
+  });
+}
+function deleteCollectionDocs(path){
+  return state.db.collection(path).get().then(function(snap){
+    return Promise.all(snap.docs.map(function(d){ return state.db.doc(path+'/'+d.id).delete(); }));
+  });
+}
+function deleteClass(id){
+  if (!confirm('Supprimer cette classe et toutes ses données (équipes, élèves, séances, résultats, matchs) ?')) return;
+  var base = 'classes/'+id;
+  Promise.all([
+    deleteCollectionDocs(base+'/teams'),
+    deleteCollectionDocs(base+'/students'),
+    deleteCollectionDocs(base+'/seances'),
+    deleteCollectionDocs(base+'/tirs'),
+    deleteCollectionDocs(base+'/matches')
+  ]).then(function(){
+    return state.db.doc(base).delete();
+  }).catch(function(e){ console.error(e); });
+  if (state.adminClassId === id) state.adminClassId = null;
+  if (state.config.activeClassId === id){
+    state.db.doc('app/config').set({activeClassId:null, activeSeanceId:null});
+  }
+}
+
+function toggleTeam(colorId){
+  var ref = state.db.doc('classes/'+state.adminClassId+'/teams/'+colorId);
+  var existing = teamById(colorId);
+  if (existing){
+    var students = studentsOfTeam(colorId);
+    if (students.length && !confirm('Cette équipe contient '+students.length+' élève(s). Les retirer aussi ?')) return;
+    Promise.all(students.map(function(s){
+      return state.db.doc('classes/'+state.adminClassId+'/students/'+s.id).delete();
+    })).then(function(){ return ref.delete(); });
+  } else {
+    ref.set({createdAt: Date.now()});
+  }
+}
+function addStudent(teamId){
+  var input = document.getElementById('new-student-'+teamId);
+  var name = input.value.trim();
+  if (!name) return;
+  state.db.collection('classes/'+state.adminClassId+'/students').add({firstName: name, teamId: teamId, createdAt: Date.now()});
+  input.value = '';
+}
+
+function createSeance(){
+  var label = document.getElementById('new-seance-label').value.trim() || ('Séance du ' + document.getElementById('new-seance-date').value);
+  var date = document.getElementById('new-seance-date').value;
+  var min = parseFloat(document.getElementById('new-seance-min').value);
+  var max = parseFloat(document.getElementById('new-seance-max').value);
+  var step = parseFloat(document.getElementById('new-seance-step').value);
+  state.db.collection('classes/'+state.adminClassId+'/seances').add({
+    label: label, date: date, tirMin: min, tirMax: max, tirStep: step, createdAt: Date.now()
+  }).then(function(ref){
+    state.db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: ref.id}));
+    flash('Séance créée et activée.');
+  });
+}
+function deleteSeance(id){
+  if (!confirm('Supprimer cette séance ainsi que ses résultats de tir et ses matchs ?')) return;
+  var base = 'classes/'+state.adminClassId;
+  Promise.all([
+    state.db.collection(base+'/tirs').where('seanceId','==',id).get().then(function(snap){
+      return Promise.all(snap.docs.map(function(d){ return state.db.doc(base+'/tirs/'+d.id).delete(); }));
+    }),
+    state.db.collection(base+'/matches').where('seanceId','==',id).get().then(function(snap){
+      return Promise.all(snap.docs.map(function(d){ return state.db.doc(base+'/matches/'+d.id).delete(); }));
+    })
+  ]).then(function(){
+    return state.db.doc(base+'/seances/'+id).delete();
+  }).then(function(){
+    if (state.config.activeSeanceId === id){
+      state.db.doc('app/config').set(Object.assign({}, state.config, {activeSeanceId:null}));
+    }
+  }).catch(function(e){ console.error(e); });
+}
+
+function addMatch(){
+  var f = state.matchForm;
+  var scoreA = parseFloat(document.getElementById('match-scoreA').value) || 0;
+  var scoreB = parseFloat(document.getElementById('match-scoreB').value) || 0;
+  if (f.teamA === f.teamB){ flash('Choisissez deux équipes différentes.', 'error'); return; }
+  state.db.collection('classes/'+state.adminClassId+'/matches').add({
+    seanceId: f.seanceId, teamAId: f.teamA, teamBId: f.teamB, scoreA: scoreA, scoreB: scoreB, ts: Date.now()
+  }).then(function(){ flash('Match ajouté.'); });
+}
+
+function exportCsv(){
+  var filterId = state.profSeanceFilter;
+  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+  var lines = ['Séance;Équipe;Élève;Série 1;Série 2'];
+  tirs.forEach(function(t){
+    var stu = studentById(t.studentId);
+    var sea = seanceById(t.seanceId);
+    if (!stu || !sea) return;
+    lines.push([sea.label, colorOf(t.teamId).label, stu.firstName, t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:''].join(';'));
+  });
+  var csv = lines.join('\n');
+  getDownloads().then(function(d){
+    d.save({filename:'tirscore-resultats.csv', data: csv}).catch(function(){});
+  });
+}
+
+function exportXlsx(){
+  if (!window.XLSX){ flash('La bibliothèque Excel n\'a pas pu se charger.', 'error'); return; }
+  var filterId = state.profSeanceFilter;
+  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+
+  var resultRows = [['Séance','Date','Équipe','Élève','Série 1','Série 2']];
+  tirs.forEach(function(t){
+    var stu = studentById(t.studentId);
+    var sea = seanceById(t.seanceId);
+    if (!stu || !sea) return;
+    resultRows.push([sea.label, sea.date||'', colorOf(t.teamId).label, stu.firstName,
+      t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:'']);
+  });
+
+  var matchRows = [['Séance','Équipe A','Score A','Score B','Équipe B']];
+  state.matches.slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);}).forEach(function(m){
+    var sea = seanceById(m.seanceId);
+    matchRows.push([sea?sea.label:'', colorOf(m.teamAId).label, m.scoreA, m.scoreB, colorOf(m.teamBId).label]);
+  });
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resultRows), 'Résultats tir');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matchRows), 'Matchs');
+  if (state.classementResult){
+    var rankRows = [['Rang','Équipe','Matchs joués','Victoires','Nuls','Défaites','Coefficient','Points ajustés','Goal average positif ajusté']];
+    state.classementResult.list.forEach(function(r, i){
+      rankRows.push([i+1, colorOf(r.teamId).label, r.played, r.wins, r.draws, r.losses,
+        Number(r.coef.toFixed(2)), Number(r.adjPoints.toFixed(2)), Number(r.adjGoal.toFixed(2))]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rankRows), 'Classement matchs');
+  }
+  if (state.classementTirResult){
+    var stuRows = [['Rang','Élève','Équipe','Séries','Moyenne','Meilleure série']];
+    state.classementTirResult.students.forEach(function(r, i){
+      var stu = studentById(r.studentId);
+      stuRows.push([i+1, stu?stu.firstName:'', colorOf(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(stuRows), 'Classement précision élèves');
+    var teamPrecRows = [['Rang','Équipe','Séries','Moyenne','Meilleure série']];
+    state.classementTirResult.teams.forEach(function(r, i){
+      teamPrecRows.push([i+1, colorOf(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamPrecRows), 'Classement précision équipes');
+  }
+
+  var wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  var blob = new Blob([wbout], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  getDownloads().then(function(d){
+    d.save({filename:'tirscore-resultats.xlsx', data: blob}).catch(function(){});
+  });
+}
+
+function exportJsonBackup(){
+  if (!state.db){ flash('Stockage indisponible.', 'error'); return; }
+  var db = state.db;
+  db.collection('classes').get().then(function(snap){
+    var classes = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    return Promise.all(classes.map(function(c){
+      var base = 'classes/'+c.id;
+      return Promise.all([
+        db.collection(base+'/teams').get(),
+        db.collection(base+'/students').get(),
+        db.collection(base+'/seances').get(),
+        db.collection(base+'/tirs').get(),
+        db.collection(base+'/matches').get()
+      ]).then(function(res){
+        function toList(snap){ return snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }); }
+        return Object.assign({}, c, {
+          teams: toList(res[0]),
+          students: toList(res[1]),
+          seances: toList(res[2]),
+          tirs: toList(res[3]),
+          matches: toList(res[4])
+        });
+      });
+    }));
+  }).then(function(classesFull){
+    var backup = {
+      app: 'TirScore',
+      exportedAt: new Date().toISOString(),
+      config: state.config,
+      classes: classesFull
+    };
+    var json = JSON.stringify(backup, null, 2);
+    return getDownloads().then(function(d){
+      var date = new Date().toISOString().slice(0,10);
+      return d.save({filename:'tirscore-sauvegarde-'+date+'.json', data: json});
+    });
+  }).then(function(){
+    flash('Sauvegarde téléchargée.');
+  }).catch(function(e){
+    console.error(e);
+    flash('Erreur lors de la sauvegarde.', 'error');
+  });
+}
+
+function importJsonBackup(file){
+  if (!file || !state.db) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var backup;
+    try{ backup = JSON.parse(reader.result); }
+    catch(e){ flash('Fichier JSON invalide.', 'error'); return; }
+    restoreBackup(backup);
+  };
+  reader.onerror = function(){ flash('Impossible de lire le fichier.', 'error'); };
+  reader.readAsText(file);
+}
+
+function restoreBackup(backup){
+  if (!backup || !Array.isArray(backup.classes)){ flash('Format de sauvegarde non reconnu.', 'error'); return; }
+  if (!confirm('Restaurer cette sauvegarde ? Les classes qu\'elle contient seront ajoutées, et les données existantes portant les mêmes identifiants seront écrasées.')) return;
+  var db = state.db;
+  var writes = [];
+  backup.classes.forEach(function(c){
+    var classId = c.id;
+    if (!classId) return;
+    writes.push(db.doc('classes/'+classId).set({name:c.name, createdAt:c.createdAt||Date.now()}));
+    ['teams','students','seances','tirs','matches'].forEach(function(col){
+      (c[col]||[]).forEach(function(item){
+        if (!item.id) return;
+        var data = Object.assign({}, item);
+        delete data.id;
+        writes.push(db.doc('classes/'+classId+'/'+col+'/'+item.id).set(data));
+      });
+    });
+  });
+  Promise.all(writes).then(function(){
+    flash('Sauvegarde restaurée.');
+    var input = document.getElementById('backup-file-input');
+    if (input) input.value = '';
+  }).catch(function(e){
+    console.error(e);
+    flash('Erreur pendant la restauration.', 'error');
+  });
+}
+
+document.getElementById('app').addEventListener('click', function(e){
+  var el = e.target.closest('[data-action]');
+  if (!el) return;
+  handleAction(el.getAttribute('data-action'), el);
+});
+document.getElementById('app').addEventListener('change', function(e){
+  var el = e.target.closest('[data-action]');
+  if (!el) return;
+  handleAction(el.getAttribute('data-action'), el);
+});
+
+init();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.warn('SW registration failed', e); });
+  });
+}
+</script>
+</body>
+</html>
