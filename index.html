@@ -6,12 +6,8 @@
 <title>TirScore</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ff4d1c">
-
-<!-- Icônes : Android / bureau -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-
-<!-- iOS / iPadOS : "Sur l'écran d'accueil" -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TirScore">
@@ -19,11 +15,7 @@
 <link rel="apple-touch-icon" sizes="167x167" href="icon-167.png">
 <link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-
-<!-- Android / Chrome (tablettes Samsung, etc.) -->
 <meta name="mobile-web-app-capable" content="yes">
-
-<!-- Windows / Surface -->
 <meta name="msapplication-TileImage" content="icon-192.png">
 <meta name="msapplication-TileColor" content="#ff4d1c">
 <style>
@@ -227,9 +219,11 @@ tr.rank-1 td{background:var(--accent-soft);}
 .match-vs{font-family:'Oswald';font-weight:700;color:var(--ink-dim);padding:0 8px;}
 .court-badge{display:inline-flex;align-items:center;gap:6px;font-family:'Oswald';font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-dim);background:var(--surface-2);border-radius:999px;padding:3px 10px;}
 
-.timer-display{font-family:'Oswald';font-size:52px;font-weight:700;font-variant-numeric:tabular-nums;text-align:center;letter-spacing:.02em;}
+.timer-display{font-family:'Oswald';font-size:clamp(64px,16vw,180px);font-weight:700;font-variant-numeric:tabular-nums;text-align:center;letter-spacing:.02em;line-height:1;}
 .timer-display.done{color:var(--danger);}
 .timer-wrap{text-align:center;}
+.timer-display.small{font-size:52px;}
+.lock-note{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink-dim);font-size:13px;font-weight:700;}
 
 .absent-row{opacity:.55;}
 .absent-row .chip.absent{background:var(--danger);}
@@ -299,7 +293,7 @@ var state = {
   matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null},
   tournamentForm: {seanceId:null, courts:1},
   roundEntry: {},
-  roundTimer: {duration:480, remaining:480, running:false},
+  roundTimer: {duration:480, remaining:480, running:false, ended:false, forRound:null},
   eleveMatchMsg: null
 };
 
@@ -729,8 +723,10 @@ function renderEleveMatchs(){
     );
   }
   var seaId = state.config.activeSeanceId;
+  var locked = !state.roundTimer.ended;
+
   var matchesHtml = cur.matches.map(function(m){
-    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, done:false};
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0};
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     var maxScore = Math.max(20, Math.round(entry.scoreA)||0, Math.round(entry.scoreB)||0);
     var namesA = teamPlayersNames(m.teamAId, seaId);
@@ -738,36 +734,37 @@ function renderEleveMatchs(){
     var chipsA = namesA.length ? namesA.map(function(n){ return '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(n)+'</span>'; }).join(' ') : '<span class="muted">—</span>';
     var chipsB = namesB.length ? namesB.map(function(n){ return '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(n)+'</span>'; }).join(' ') : '<span class="muted">—</span>';
     return '<div class="card stack">' +
-      '<div class="row" style="align-items:center;justify-content:space-between">' +
+      '<div class="row" style="align-items:center;justify-content:center">' +
         '<span class="court-badge">Terrain '+(m.slot||1)+'</span>' +
-        '<label style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px">' +
-          '<input type="checkbox" data-action="round-match-done" data-id="'+m.id+'"'+(entry.done?' checked':'')+'> Match terminé' +
-        '</label>' +
       '</div>' +
       '<div class="row" style="align-items:flex-start">' +
         '<div class="match-side" style="text-align:left">'+chipsA+'</div>' +
         '<div class="match-vs">VS</div>' +
         '<div class="match-side" style="text-align:right">'+chipsB+'</div>' +
       '</div>' +
-      '<div class="row">' +
-        '<div class="field slider-field">' +
-          '<label>Score '+esc(ca.label)+' — <span id="rd-scoreA-disp-'+m.id+'">'+Math.round(entry.scoreA)+'</span></label>' +
-          '<input type="range" class="rd-score" data-side="A" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreA)+'">' +
-        '</div>' +
-        '<div class="field slider-field">' +
-          '<label>Score '+esc(cb.label)+' — <span id="rd-scoreB-disp-'+m.id+'">'+Math.round(entry.scoreB)+'</span></label>' +
-          '<input type="range" class="rd-score" data-side="B" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreB)+'">' +
-        '</div>' +
-      '</div>' +
+      (locked ? '' : (
+        '<div class="row">' +
+          '<div class="field slider-field">' +
+            '<label>Score '+esc(ca.label)+' — <span id="rd-scoreA-disp-'+m.id+'">'+Math.round(entry.scoreA)+'</span></label>' +
+            '<input type="range" class="rd-score" data-side="A" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreA)+'">' +
+          '</div>' +
+          '<div class="field slider-field">' +
+            '<label>Score '+esc(cb.label)+' — <span id="rd-scoreB-disp-'+m.id+'">'+Math.round(entry.scoreB)+'</span></label>' +
+            '<input type="range" class="rd-score" data-side="B" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreB)+'">' +
+          '</div>' +
+        '</div>'
+      )) +
     '</div>';
   }).join('');
+
   return (
     '<div class="stack center">' +
-      '<h2>Ronde '+cur.round+' — Saisie des scores</h2>' +
-      renderTimerCard(false) +
+      '<h2>Ronde '+cur.round+'</h2>' +
+      renderTimerCard(true, true) +
       matchesHtml +
-      '<p class="muted">Coche « Match terminé » pour chaque match joué, puis enregistre.</p>' +
-      '<button class="btn primary big" data-action="save-round-scores">Enregistrer les scores</button>' +
+      (locked ?
+        '<p class="lock-note">🔒 La saisie des scores s\'ouvre à la fin du temps (ou en cliquant sur « Fin »).</p>'
+        : '<button class="btn primary big" data-action="save-round-scores">Enregistrer les scores</button>') +
     '</div>'
   );
 }
@@ -983,7 +980,19 @@ function currentRoundMatches(){
   var minRound = scheduled.reduce(function(min,m){ var r=m.round||1; return r<min?r:min; }, Infinity);
   var list = scheduled.filter(function(m){ return (m.round||1)===minRound; })
     .sort(function(a,b){ return (a.slot||0)-(b.slot||0); });
+  ensureTimerForRound(seaId+'_'+minRound);
   return {round:minRound, matches:list};
+}
+// Réinitialise le chrono de ronde automatiquement dès qu'on change de ronde
+// (ou de leçon), pour qu'une nouvelle ronde reparte toujours verrouillée.
+function ensureTimerForRound(key){
+  if (state.roundTimer.forRound !== key){
+    if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
+    state.roundTimer.remaining = state.roundTimer.duration;
+    state.roundTimer.running = false;
+    state.roundTimer.ended = false;
+    state.roundTimer.forRound = key;
+  }
 }
 function teamPlayersNames(teamId, seanceId){
   return studentsOfTeam(teamId).filter(function(s){ return !seanceId || !isAbsent(seanceId, s.id); }).map(function(s){ return s.firstName; });
@@ -993,20 +1002,21 @@ function formatTimer(sec){
   var m = Math.floor(sec/60), s = sec%60;
   return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
 }
-function renderTimerCard(withControls){
+function renderTimerCard(withControls, big){
   var rt = state.roundTimer;
   var minutes = Math.round(rt.duration/60);
   return (
     '<div class="card timer-wrap stack">' +
       '<div class="eyebrow">Chrono de ronde</div>' +
-      '<div class="timer-display'+(rt.remaining===0?' done':'')+'" id="timer-display">'+formatTimer(rt.remaining)+'</div>' +
-      (rt.remaining===0 ? '<div class="banner warn">⏰ Temps écoulé !</div>' : '') +
+      '<div class="timer-display'+(big?'':' small')+(rt.ended?' done':'')+'" id="timer-display">'+formatTimer(rt.remaining)+'</div>' +
+      (rt.ended ? '<div class="banner warn">⏰ Temps écoulé — vous pouvez saisir les scores.</div>' : '') +
       (withControls ? (
         '<div class="row" style="justify-content:center">' +
           '<div class="field" style="max-width:140px"><label>Durée (min)</label><input type="number" min="1" step="1" id="timer-duration" value="'+minutes+'" data-action="timer-duration"></div>' +
         '</div>' +
         '<div class="btn-row" style="justify-content:center">' +
-          (rt.running ? '<button class="btn" data-action="timer-pause">Pause</button>' : '<button class="btn primary" data-action="timer-start">Démarrer</button>') +
+          (rt.running ? '<button class="btn" data-action="timer-pause">Pause</button>' : '<button class="btn primary" data-action="timer-start">Début</button>') +
+          '<button class="btn" data-action="timer-end">Fin</button>' +
           '<button class="btn" data-action="timer-reset">Réinitialiser</button>' +
         '</div>'
       ) : '') +
@@ -1347,7 +1357,7 @@ function wireDynamic(){
     (function(sl){
       sl.addEventListener('input', function(){
         var id = sl.getAttribute('data-id'), side = sl.getAttribute('data-side');
-        if (!state.roundEntry[id]) state.roundEntry[id] = {scoreA:0, scoreB:0, done:false};
+        if (!state.roundEntry[id]) state.roundEntry[id] = {scoreA:0, scoreB:0};
         state.roundEntry[id]['score'+side] = parseFloat(sl.value);
         var disp = document.getElementById('rd-score'+side+'-disp-'+id);
         if (disp) disp.textContent = fmtNum(state.roundEntry[id]['score'+side]);
@@ -1393,16 +1403,11 @@ function handleAction(action, el){
       state.roundEntry = {};
       setView('eleve-matchs');
       break;
-    case 'round-match-done':
-      var mid = el.getAttribute('data-id');
-      if (!state.roundEntry[mid]) state.roundEntry[mid] = {scoreA:0, scoreB:0, done:false};
-      state.roundEntry[mid].done = el.checked;
-      render();
-      break;
     case 'save-round-scores': saveRoundScores(); break;
     case 'toggle-absence': toggleAbsence(el.getAttribute('data-seance'), el.getAttribute('data-id')); break;
     case 'timer-start': startTimer(); break;
     case 'timer-pause': pauseTimer(); break;
+    case 'timer-end': endTimerNow(); break;
     case 'timer-reset': resetTimer(); break;
     case 'timer-duration':
       var mins = Math.max(1, parseInt(el.value, 10) || 8);
@@ -1498,19 +1503,14 @@ function validerSaisie(){
 function saveRoundScores(){
   var cur = currentRoundMatches();
   if (!cur || !state.db) return;
+  if (!state.roundTimer.ended){ flash('Attends la fin du temps (ou clique sur « Fin ») avant de saisir les scores.', 'error'); return; }
   var classId = state.config.activeClassId;
-  var writes = [];
-  var any = false;
-  cur.matches.forEach(function(m){
-    var entry = state.roundEntry[m.id];
-    if (entry && entry.done){
-      any = true;
-      writes.push(state.db.doc('classes/'+classId+'/matches/'+m.id).update({
-        scoreA: Math.round(entry.scoreA)||0, scoreB: Math.round(entry.scoreB)||0, ts: Date.now()
-      }));
-    }
+  var writes = cur.matches.map(function(m){
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0};
+    return state.db.doc('classes/'+classId+'/matches/'+m.id).update({
+      scoreA: Math.round(entry.scoreA)||0, scoreB: Math.round(entry.scoreB)||0, ts: Date.now()
+    });
   });
-  if (!any){ flash('Coche « Match terminé » pour au moins un match avant d\'enregistrer.', 'error'); return; }
   Promise.all(writes).then(function(){
     state.roundEntry = {};
     state.classementResult = computeRanking(null);
@@ -1538,18 +1538,18 @@ function tickTimer(){
   if (!state.roundTimer.running) return;
   state.roundTimer.remaining = Math.max(0, state.roundTimer.remaining - 1);
   var disp = document.getElementById('timer-display');
-  if (disp){
+  if (disp && state.roundTimer.remaining > 0){
     disp.textContent = formatTimer(state.roundTimer.remaining);
-    if (state.roundTimer.remaining === 0) disp.classList.add('done');
   }
   if (state.roundTimer.remaining === 0){
     state.roundTimer.running = false;
+    state.roundTimer.ended = true;
     if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
     render();
   }
 }
 function startTimer(){
-  if (state.roundTimer.running) return;
+  if (state.roundTimer.running || state.roundTimer.ended) return;
   if (state.roundTimer.remaining <= 0) state.roundTimer.remaining = state.roundTimer.duration;
   state.roundTimer.running = true;
   roundTimerHandle = setInterval(tickTimer, 1000);
@@ -1560,9 +1560,18 @@ function pauseTimer(){
   if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
   render();
 }
+function endTimerNow(){
+  state.roundTimer.running = false;
+  state.roundTimer.remaining = 0;
+  state.roundTimer.ended = true;
+  if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
+  render();
+}
 function resetTimer(){
-  pauseTimer();
+  state.roundTimer.running = false;
+  if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
   state.roundTimer.remaining = state.roundTimer.duration;
+  state.roundTimer.ended = false;
   render();
 }
 
