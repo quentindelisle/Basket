@@ -2,13 +2,35 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TirScore</title>
-<meta name="description" content="Saisie des scores de tir et classement d'équipes pour l'EPS — application hors-ligne, données stockées sur l'appareil.">
-<meta name="theme-color" content="#ff4d1c">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon-192.png" type="image/png">
+<meta name="theme-color" content="#ff4d1c">
+
+<!-- Icônes : Android / bureau -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+
+<!-- iOS / iPadOS : "Sur l'écran d'accueil" -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TirScore">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<!-- Android / Chrome (tablettes Samsung, etc.) -->
+<meta name="mobile-web-app-capable" content="yes">
+
+<!-- Windows / Surface -->
+<meta name="msapplication-TileImage" content="icon-192.png">
+<meta name="msapplication-TileColor" content="#ff4d1c">
+<style>
+:root{color-scheme:light}
+body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}
+img{max-width:100%}
+</style>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
@@ -178,9 +200,18 @@ tr.rank-1 td{background:var(--accent-soft);}
   .slider-value{font-size:48px;}
   .row{flex-direction:column;align-items:stretch;}
 }
+
+.app-signature{
+  position:fixed;right:10px;bottom:8px;
+  font-family:'Manrope';font-size:11px;font-weight:600;
+  color:var(--ink-dim);opacity:.6;letter-spacing:.02em;
+  pointer-events:none;z-index:5;
+}
 </style>
 </head>
 <body>
+
+
 <div id="app">
   <div class="topbar">
     <div class="brand">
@@ -191,6 +222,7 @@ tr.rank-1 td{background:var(--accent-soft);}
   </div>
   <div id="screen"><div class="empty">Chargement…</div></div>
 </div>
+<div class="app-signature">by Quentin Delisle</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -237,7 +269,8 @@ var state = {
   classementResult: null,
   classementTirScope: 'all',
   classementTirResult: null,
-  matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0}
+  matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null},
+  tournamentForm: {seanceId:null, courts:1}
 };
 
 var unsubs = {};
@@ -260,14 +293,26 @@ function esc(s){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
 }
-function fmtNum(v, step){
-  var dec = (step && step % 1 !== 0) ? 1 : 0;
-  return Number(v).toFixed(dec).replace('.', ',');
+function fmtNum(v){
+  var num = Number(v);
+  var dec = (num % 1 !== 0) ? 1 : 0;
+  return num.toFixed(dec).replace('.', ',');
 }
-function colorOf(teamId){
-  return TEAM_COLORS.find(function(c){return c.id===teamId;}) || {label:teamId, hex:'#888'};
+function colorOf(colorId){
+  return TEAM_COLORS.find(function(c){return c.id===colorId;}) || {label:colorId, hex:'#888'};
 }
 function teamById(id){ return state.teams.find(function(t){return t.id===id;}); }
+// Couleur affichée pour une équipe : l'équipe garde son identité (élèves,
+// matchs, résultats) même quand sa couleur change. teamOrId accepte soit un
+// objet équipe, soit un id d'équipe (on va alors le chercher).
+function colorForTeam(teamOrId){
+  var t = (teamOrId && typeof teamOrId === 'object') ? teamOrId : teamById(teamOrId);
+  if (!t) return colorOf(teamOrId);
+  return colorOf(t.color || t.id);
+}
+function usedColorIds(excludeTeamId){
+  return state.teams.filter(function(t){ return t.id !== excludeTeamId; }).map(function(t){ return t.color || t.id; });
+}
 function studentById(id){ return state.students.find(function(s){return s.id===id;}); }
 function seanceById(id){ return state.seances.find(function(s){return s.id===id;}); }
 function activeSeance(){ return seanceById(state.config.activeSeanceId); }
@@ -508,9 +553,9 @@ function renderHome(){
   if (!cls){
     statusHtml = '<div class="banner warn">Aucune classe active. Ouvrez l\'espace enseignant pour en créer une.</div>';
   } else if (!sea){
-    statusHtml = '<div class="banner warn">Classe active : <strong>'+esc(cls.name)+'</strong> — aucune séance ouverte pour le moment.</div>';
+    statusHtml = '<div class="banner warn">Classe active : <strong>'+esc(cls.name)+'</strong> — aucune leçon ouverte pour le moment.</div>';
   } else {
-    statusHtml = '<div class="banner info">Classe : <strong>'+esc(cls.name)+'</strong> · Séance : <strong>'+esc(sea.label)+'</strong></div>';
+    statusHtml = '<div class="banner info">Classe : <strong>'+esc(cls.name)+'</strong> · Leçon : <strong>'+esc(sea.label)+'</strong></div>';
   }
   return (
     '<div class="stack center">' +
@@ -522,7 +567,7 @@ function renderHome(){
       '</div>' +
       '<div class="card stack">' +
         '<div class="eyebrow">Enseignant</div>' +
-        '<p class="muted">Gérer les classes, les équipes, les séances, les matchs et le classement.</p>' +
+        '<p class="muted">Gérer les classes, les équipes, les leçons, les matchs et le classement.</p>' +
         '<button class="btn big" data-action="go-prof">Espace enseignant</button>' +
       '</div>' +
     '</div>'
@@ -538,13 +583,13 @@ function renderEleveEquipe(){
   var cls = activeClass();
   var sea = activeSeance();
   if (!cls || !sea){
-    return '<div class="card center empty">Aucune séance active pour le moment.<br>Demande à ton enseignant d\'ouvrir une séance.</div>';
+    return '<div class="card center empty">Aucune leçon active pour le moment.<br>Demande à ton enseignant d\'ouvrir une leçon.</div>';
   }
   if (!state.teams.length){
     return '<div class="card center empty">Aucune équipe n\'a encore été créée pour cette classe.</div>';
   }
   var swatches = state.teams.map(function(t){
-    var c = colorOf(t.id);
+    var c = colorForTeam(t);
     var n = studentsOfTeam(t.id).length;
     return '<button class="team-swatch" style="'+swatchStyle(c)+'" data-action="pick-team" data-id="'+t.id+'">'+
       esc(c.label) + '<small>'+n+' élève'+(n>1?'s':'')+'</small></button>';
@@ -561,7 +606,7 @@ function renderEleveEquipe(){
 // ---------- ELEVE : prenom ----------
 function renderElevePrenom(){
   var team = teamById(state.student.teamId);
-  var c = colorOf(state.student.teamId);
+  var c = colorForTeam(team);
   var list = studentsOfTeam(state.student.teamId);
   var names = list.length ? list.map(function(s){
     return '<button class="name-btn" data-action="pick-student" data-id="'+s.id+'">'+esc(s.firstName)+'</button>';
@@ -580,9 +625,9 @@ function renderElevePrenom(){
 function renderEleveFiche(){
   var sea = activeSeance();
   var stu = studentById(state.student.studentId);
-  var c = colorOf(state.student.teamId);
+  var c = colorForTeam(state.student.teamId);
   if (!sea || !stu){
-    return '<div class="card empty">Séance ou élève introuvable.</div>';
+    return '<div class="card empty">Leçon ou élève introuvable.</div>';
   }
   var tir = tirFor(sea.id, stu.id);
   function serieBlock(n){
@@ -609,17 +654,16 @@ function renderEleveFiche(){
 function renderEleveSaisie(){
   var sea = activeSeance();
   var stu = studentById(state.student.studentId);
-  var min = sea.tirMin != null ? sea.tirMin : 0;
-  var max = sea.tirMax != null ? sea.tirMax : 10;
-  var step = sea.tirStep != null ? sea.tirStep : 0.5;
+  var min = sea.tirMin != null ? Math.round(sea.tirMin) : 0;
+  var max = sea.tirMax != null ? Math.round(sea.tirMax) : 10;
   return (
     '<div class="stack center">' +
       '<button class="btn ghost" data-action="cancel-saisie">&larr; Annuler</button>' +
       '<h2>'+esc(stu.firstName)+' — Série '+state.saisieSerie+'</h2>' +
       '<div class="card slider-wrap">' +
-        '<div class="slider-value" id="slider-display">'+fmtNum(state.saisieValue, step)+'</div>' +
-        '<input type="range" id="score-slider" min="'+min+'" max="'+max+'" step="'+step+'" value="'+state.saisieValue+'">' +
-        '<div class="slider-scale"><span>'+fmtNum(min, step)+'</span><span>'+fmtNum(max, step)+'</span></div>' +
+        '<div class="slider-value" id="slider-display">'+fmtNum(state.saisieValue)+'</div>' +
+        '<input type="range" id="score-slider" min="'+min+'" max="'+max+'" step="1" value="'+Math.round(state.saisieValue)+'">' +
+        '<div class="slider-scale"><span>'+fmtNum(min)+'</span><span>'+fmtNum(max)+'</span></div>' +
       '</div>' +
       '<button class="btn primary big" data-action="valider-saisie">Valider ma série</button>' +
     '</div>'
@@ -631,7 +675,7 @@ function renderProf(){
   var tabs = [
     ['classes','Classes'],
     ['equipes','Équipes & élèves'],
-    ['seances','Séances'],
+    ['seances','Leçons'],
     ['resultats','Résultats tir'],
     ['matchs','Matchs'],
     ['classement-tir','Classement précision'],
@@ -679,7 +723,7 @@ function renderProfClasses(){
       '<div class="card">'+rows+'</div>' +
       '<div class="card stack">' +
         '<div class="eyebrow">Sauvegarde</div>' +
-        '<p class="muted">Télécharge toutes les classes, équipes, élèves, séances, résultats de tir et matchs dans un seul fichier JSON — à conserver comme sauvegarde, ou pour transférer les données vers un autre appareil.</p>' +
+        '<p class="muted">Télécharge toutes les classes, équipes, élèves, leçons, résultats de tir et matchs dans un seul fichier JSON — à conserver comme sauvegarde, ou pour transférer les données vers un autre appareil.</p>' +
         '<div class="btn-row">' +
           '<button class="btn" data-action="export-json-backup">Télécharger la sauvegarde complète (JSON)</button>' +
           '<button class="btn" data-action="trigger-import">Restaurer une sauvegarde JSON…</button>' +
@@ -699,20 +743,27 @@ function requireAdminClass(){
 
 function renderProfEquipes(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var activeIds = state.teams.map(function(t){return t.id;});
-  var swatches = TEAM_COLORS.map(function(c){
-    var on = activeIds.indexOf(c.id) !== -1;
-    return '<button class="team-swatch" style="'+swatchStyle(c)+';opacity:'+(on?'1':'.35')+'" data-action="toggle-team" data-id="'+c.id+'">'+
-      esc(c.label) + '<small>'+(on?'utilisée — cliquer pour retirer':'cliquer pour activer')+'</small></button>';
-  }).join('');
+  var allColorsUsed = usedColorIds(null).length >= TEAM_COLORS.length;
   var rosters = state.teams.map(function(t){
-    var c = colorOf(t.id);
+    var c = colorForTeam(t);
+    var currentColorId = t.color || t.id;
     var students = studentsOfTeam(t.id);
     var list = students.map(function(s){
       return '<div class="list-row"><span>'+esc(s.firstName)+'</span><button class="iconbtn" data-action="delete-student" data-id="'+s.id+'">✕</button></div>';
     }).join('') || '<div class="muted">Aucun élève.</div>';
+    var colorOptions = TEAM_COLORS.map(function(cc){
+      var takenBy = state.teams.find(function(other){ return other.id !== t.id && (other.color || other.id) === cc.id; });
+      var suffix = takenBy ? ' (échange avec cette équipe)' : '';
+      return '<option value="'+cc.id+'"'+(cc.id===currentColorId?' selected':'')+'>'+esc(cc.label)+suffix+'</option>';
+    }).join('');
     return '<div class="card stack">' +
-      '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+' · '+students.length+'</div>' +
+      '<div class="row" style="align-items:center">' +
+        '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+' · '+students.length+'</div>' +
+        '<button class="iconbtn" data-action="delete-team" data-id="'+t.id+'" title="Supprimer l\'équipe">✕</button>' +
+      '</div>' +
+      '<div class="field"><label>Couleur (chasuble)</label>' +
+        '<select data-action="recolor-team" data-id="'+t.id+'">'+colorOptions+'</select>' +
+      '</div>' +
       list +
       '<div class="row"><div class="field"><input placeholder="Prénom" id="new-student-'+t.id+'"></div>' +
       '<button class="btn" data-action="add-student" data-team="'+t.id+'">Ajouter</button></div>' +
@@ -720,16 +771,21 @@ function renderProfEquipes(){
   }).join('');
   return (
     '<div class="stack">' +
-      '<div class="card stack"><div class="eyebrow">Équipes (3-4 élèves par équipe)</div><div class="team-grid">'+swatches+'</div></div>' +
-      '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">'+(rosters || '<div class="empty">Activez une couleur ci-dessus pour commencer.</div>')+'</div>' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Équipes (3-4 élèves par équipe)</div>' +
+        '<p class="muted">Changez la couleur d\'une équipe à tout moment (si les chasubles changent) : ses élèves, ses résultats de tir et ses matchs restent attachés à l\'équipe.</p>' +
+        '<button class="btn primary" data-action="add-team"'+(allColorsUsed?' disabled':'')+'>+ Nouvelle équipe</button>' +
+        (allColorsUsed ? '<p class="muted">Les 9 couleurs sont déjà utilisées dans cette classe.</p>' : '') +
+      '</div>' +
+      '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">'+(rosters || '<div class="empty">Créez une équipe ci-dessus pour commencer.</div>')+'</div>' +
     '</div>'
   );
 }
 
 function lastSeanceDefaults(){
-  if (!state.seances.length) return {tirMin:0, tirMax:10, tirStep:0.5};
+  if (!state.seances.length) return {tirMin:0, tirMax:10, tirStep:1};
   var s = state.seances.slice().sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); })[0];
-  return {tirMin:s.tirMin!=null?s.tirMin:0, tirMax:s.tirMax!=null?s.tirMax:10, tirStep:s.tirStep!=null?s.tirStep:0.5};
+  return {tirMin:s.tirMin!=null?Math.round(s.tirMin):0, tirMax:s.tirMax!=null?Math.round(s.tirMax):10, tirStep:1};
 }
 
 function renderProfSeances(){
@@ -739,25 +795,24 @@ function renderProfSeances(){
   var rows = state.seances.slice().sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);}).map(function(s){
     var isActive = s.id === state.config.activeSeanceId;
     return '<div class="list-row"><div>' +
-      '<strong>'+esc(s.label)+'</strong> <span class="muted">('+esc(s.date||'')+') — curseur '+fmtNum(s.tirMin,s.tirStep)+' à '+fmtNum(s.tirMax,s.tirStep)+', pas '+fmtNum(s.tirStep,s.tirStep)+'</span>' +
+      '<strong>'+esc(s.label)+'</strong> <span class="muted">('+esc(s.date||'')+') — curseur '+fmtNum(s.tirMin)+' à '+fmtNum(s.tirMax)+'</span>' +
       (isActive ? ' <span class="chip" style="background:var(--accent)">active</span>' : '') +
       '</div><div class="btn-row">' +
       (isActive ? '' : '<button class="btn" data-action="set-active-seance" data-id="'+s.id+'">Activer</button>') +
       '<button class="iconbtn" data-action="delete-seance" data-id="'+s.id+'">✕</button>' +
       '</div></div>';
-  }).join('') || '<div class="empty">Aucune séance créée.</div>';
+  }).join('') || '<div class="empty">Aucune leçon créée.</div>';
   return (
     '<div class="stack">' +
       '<div class="card stack">' +
-        '<div class="eyebrow">Nouvelle séance</div>' +
+        '<div class="eyebrow">Nouvelle leçon</div>' +
         '<div class="row">' +
-          '<div class="field"><label>Intitulé</label><input id="new-seance-label" placeholder="ex. Séance du '+today+'"></div>' +
+          '<div class="field"><label>Intitulé</label><input id="new-seance-label" placeholder="ex. Leçon du '+today+'"></div>' +
           '<div class="field"><label>Date</label><input type="date" id="new-seance-date" value="'+today+'"></div>' +
         '</div>' +
         '<div class="row">' +
-          '<div class="field"><label>Curseur min</label><input type="number" step="any" id="new-seance-min" value="'+d.tirMin+'"></div>' +
-          '<div class="field"><label>Curseur max</label><input type="number" step="any" id="new-seance-max" value="'+d.tirMax+'"></div>' +
-          '<div class="field"><label>Pas</label><input type="number" step="any" id="new-seance-step" value="'+d.tirStep+'"></div>' +
+          '<div class="field"><label>Curseur min</label><input type="number" step="1" id="new-seance-min" value="'+d.tirMin+'"></div>' +
+          '<div class="field"><label>Curseur max</label><input type="number" step="1" id="new-seance-max" value="'+d.tirMax+'"></div>' +
           '<button class="btn primary" data-action="create-seance">Créer et activer</button>' +
         '</div>' +
       '</div>' +
@@ -769,14 +824,14 @@ function renderProfSeances(){
 function renderProfResultats(){
   var warn = requireAdminClass(); if (warn) return warn;
   var filterId = state.profSeanceFilter;
-  var options = '<option value="">Toutes les séances</option>' + state.seances.map(function(s){
+  var options = '<option value="">Toutes les leçons</option>' + state.seances.map(function(s){
     return '<option value="'+s.id+'"'+(filterId===s.id?' selected':'')+'>'+esc(s.label)+'</option>';
   }).join('');
   var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
   var rows = tirs.map(function(t){
     var stu = studentById(t.studentId);
     var sea = seanceById(t.seanceId);
-    var c = colorOf(t.teamId);
+    var c = colorForTeam(t.teamId);
     if (!stu || !sea) return '';
     return '<tr><td>'+esc(sea.label)+'</td><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
       '<td>'+esc(stu.firstName)+'</td>' +
@@ -787,57 +842,158 @@ function renderProfResultats(){
   return (
     '<div class="stack">' +
       '<div class="row">' +
-        '<div class="field"><label>Filtrer par séance</label><select id="resultats-filter" data-action="filter-resultats">'+options+'</select></div>' +
+        '<div class="field"><label>Filtrer par leçon</label><select id="resultats-filter" data-action="filter-resultats">'+options+'</select></div>' +
         '<button class="btn" data-action="export-csv">Exporter en CSV</button>' +
         '<button class="btn" data-action="export-xlsx">Exporter en Excel (.xlsx)</button>' +
       '</div>' +
-      '<div class="card table-wrap"><table><thead><tr><th>Séance</th><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Leçon</th><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
     '</div>'
   );
 }
 
 function renderProfMatchs(){
   var warn = requireAdminClass(); if (warn) return warn;
-  if (!state.seances.length) return '<div class="card empty">Créez d\'abord une séance.</div>';
+  if (!state.seances.length) return '<div class="card empty">Créez d\'abord une leçon.</div>';
   if (state.teams.length < 2) return '<div class="card empty">Il faut au moins deux équipes pour saisir un match.</div>';
+  var teamIds = state.teams.map(function(t){return t.id;});
   var f = state.matchForm;
-  if (!f.seanceId) f.seanceId = state.config.activeSeanceId || state.seances[0].id;
-  if (!f.teamA) f.teamA = state.teams[0].id;
-  if (!f.teamB) f.teamB = (state.teams[1]||state.teams[0]).id;
+  if (!f.seanceId || !seanceById(f.seanceId)) f.seanceId = state.config.activeSeanceId || state.seances[0].id;
+  if (!f.teamA || teamIds.indexOf(f.teamA) === -1) f.teamA = state.teams[0].id;
+  if (!f.teamB || teamIds.indexOf(f.teamB) === -1) f.teamB = (state.teams[1]||state.teams[0]).id;
+  var tf = state.tournamentForm;
+  if (!tf.seanceId || !seanceById(tf.seanceId)) tf.seanceId = state.config.activeSeanceId || state.seances[0].id;
+
   var seaOpts = state.seances.map(function(s){ return '<option value="'+s.id+'"'+(f.seanceId===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
-  var teamOptsA = state.teams.map(function(t){ var c=colorOf(t.id); return '<option value="'+t.id+'"'+(f.teamA===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
-  var teamOptsB = state.teams.map(function(t){ var c=colorOf(t.id); return '<option value="'+t.id+'"'+(f.teamB===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
-  var list = state.matches.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).map(function(m){
+  var tSeaOpts = state.seances.map(function(s){ return '<option value="'+s.id+'"'+(tf.seanceId===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
+  var teamOptsA = state.teams.map(function(t){ var c=colorForTeam(t); return '<option value="'+t.id+'"'+(f.teamA===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
+  var teamOptsB = state.teams.map(function(t){ var c=colorForTeam(t); return '<option value="'+t.id+'"'+(f.teamB===t.id?' selected':'')+'>'+esc(c.label)+'</option>'; }).join('');
+
+  var scheduled = state.matches.filter(function(m){ return m.scoreA == null; })
+    .sort(function(a,b){ return (a.round||0)-(b.round||0) || (a.slot||0)-(b.slot||0); });
+  var played = state.matches.filter(function(m){ return m.scoreA != null; })
+    .sort(function(a,b){return (b.ts||0)-(a.ts||0);});
+
+  var programme = '';
+  if (scheduled.length){
+    var byRound = {};
+    scheduled.forEach(function(m){ var r=m.round||1; (byRound[r]=byRound[r]||[]).push(m); });
+    programme = Object.keys(byRound).sort(function(a,b){return a-b;}).map(function(r){
+      var rows = byRound[r].map(function(m){
+        var sea = seanceById(m.seanceId);
+        var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
+        return '<div class="list-row"><div>' +
+          '<span class="muted">'+esc(sea?sea.label:'?')+'</span> — ' +
+          '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span> vs ' +
+          '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
+          '</div><div class="btn-row">' +
+          '<button class="btn primary" data-action="edit-match" data-id="'+m.id+'">Saisir le score</button>' +
+          '<button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button>' +
+          '</div></div>';
+      }).join('');
+      return '<div class="card stack"><div class="eyebrow">Ronde '+r+'</div>'+rows+'</div>';
+    }).join('');
+  }
+
+  var resultats = played.map(function(m){
     var sea = seanceById(m.seanceId);
-    var ca = colorOf(m.teamAId), cb = colorOf(m.teamBId);
+    var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     return '<div class="list-row"><div>' +
       '<span class="muted">'+esc(sea?sea.label:'?')+'</span> — ' +
       '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span> ' + m.scoreA + ' – ' + m.scoreB + ' ' +
       '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
-      '</div><button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button></div>';
-  }).join('') || '<div class="empty">Aucun match saisi.</div>';
+      '</div><div class="btn-row">' +
+      '<button class="btn" data-action="edit-match" data-id="'+m.id+'">Modifier</button>' +
+      '<button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button>' +
+      '</div></div>';
+  }).join('') || '<div class="empty">Aucun résultat pour le moment.</div>';
+
+  var editing = f.editingId ? state.matches.find(function(m){return m.id===f.editingId;}) : null;
+
+  var teamChips = state.teams.map(function(t){
+    var c = colorForTeam(t);
+    var currentColorId = t.color || t.id;
+    var colorOptions = TEAM_COLORS.map(function(cc){
+      var takenBy = state.teams.find(function(other){ return other.id !== t.id && (other.color || other.id) === cc.id; });
+      var suffix = takenBy ? ' (échange avec cette équipe)' : '';
+      return '<option value="'+cc.id+'"'+(cc.id===currentColorId?' selected':'')+'>'+esc(cc.label)+suffix+'</option>';
+    }).join('');
+    return '<div class="list-row"><div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</div>' +
+      '<select data-action="recolor-team" data-id="'+t.id+'">'+colorOptions+'</select></div>';
+  }).join('');
+
+  var scoreAmax = Math.max(20, Math.round(f.scoreA)||0, Math.round(f.scoreB)||0);
+
   return (
     '<div class="stack">' +
       '<div class="card stack">' +
-        '<div class="eyebrow">Nouveau match</div>' +
-        '<div class="row">' +
-          '<div class="field"><label>Séance</label><select id="match-seance" data-action="match-field" data-f="seanceId">'+seaOpts+'</select></div>' +
-        '</div>' +
-        '<div class="row">' +
-          '<div class="field"><label>Équipe A</label><select id="match-teamA" data-action="match-field" data-f="teamA">'+teamOptsA+'</select></div>' +
-          '<div class="field"><label>Score A</label><input type="number" id="match-scoreA" value="'+f.scoreA+'"></div>' +
-          '<div class="field"><label>Score B</label><input type="number" id="match-scoreB" value="'+f.scoreB+'"></div>' +
-          '<div class="field"><label>Équipe B</label><select id="match-teamB" data-action="match-field" data-f="teamB">'+teamOptsB+'</select></div>' +
-        '</div>' +
-        '<button class="btn primary" data-action="add-match">Ajouter le match</button>' +
+        '<div class="eyebrow">Couleurs des chasubles</div>' +
+        '<p class="muted">Changez la couleur d\'une équipe à tout moment, même en plein tournoi : ses matchs et son historique restent attachés à l\'équipe.</p>' +
+        teamChips +
       '</div>' +
-      '<div class="card">'+list+'</div>' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Programmer un tournoi</div>' +
+        '<p class="muted">Génère automatiquement les rencontres pour que toutes les équipes s\'affrontent une fois, réparties en rondes (à chaque ronde, toutes les équipes jouent en même temps).</p>' +
+        '<div class="row">' +
+          '<div class="field"><label>Leçon</label><select data-action="tournament-field" data-f="seanceId">'+tSeaOpts+'</select></div>' +
+          '<div class="field"><label>Terrains disponibles en même temps</label><input type="number" min="1" step="1" id="tournament-courts" value="'+tf.courts+'"></div>' +
+          '<button class="btn primary" data-action="generate-schedule">Générer le programme</button>' +
+        '</div>' +
+      '</div>' +
+      (programme ? '<div class="stack"><div class="eyebrow">Programme à jouer</div>'+programme+'</div>' : '') +
+      '<div class="card stack">' +
+        '<div class="eyebrow">'+(editing ? 'Saisir le score' : 'Ajouter un match')+'</div>' +
+        (editing ? '<p class="muted">Ronde '+(editing.round||'—')+'</p>' : '') +
+        '<div class="row">' +
+          '<div class="field"><label>Leçon</label><select id="match-seance" data-action="match-field" data-f="seanceId"'+(editing?' disabled':'')+'>'+seaOpts+'</select></div>' +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Équipe A</label><select id="match-teamA" data-action="match-field" data-f="teamA"'+(editing?' disabled':'')+'>'+teamOptsA+'</select></div>' +
+          '<div class="field"><label>Équipe B</label><select id="match-teamB" data-action="match-field" data-f="teamB"'+(editing?' disabled':'')+'>'+teamOptsB+'</select></div>' +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="field slider-field">' +
+            '<label>Score A — <span id="match-scoreA-display">'+Math.round(f.scoreA)+'</span></label>' +
+            '<input type="range" id="match-scoreA" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreA)+'">' +
+          '</div>' +
+          '<div class="field slider-field">' +
+            '<label>Score B — <span id="match-scoreB-display">'+Math.round(f.scoreB)+'</span></label>' +
+            '<input type="range" id="match-scoreB" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreB)+'">' +
+          '</div>' +
+        '</div>' +
+        '<div class="btn-row">' +
+          '<button class="btn primary" data-action="add-match">'+(editing?'Valider le score':'Ajouter le match')+'</button>' +
+          (editing ? '<button class="btn ghost" data-action="cancel-edit-match">Annuler</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="card stack"><div class="eyebrow">Résultats</div>'+resultats+'</div>' +
     '</div>'
   );
 }
 
+function generateRoundRobinPairs(teamIds){
+  var arr = teamIds.slice();
+  if (arr.length % 2 === 1) arr.push(null);
+  var n = arr.length;
+  var rounds = [];
+  for (var r = 0; r < n - 1; r++){
+    var pairs = [];
+    for (var i = 0; i < n/2; i++){
+      var a = arr[i], b = arr[n-1-i];
+      if (a != null && b != null) pairs.push([a,b]);
+    }
+    rounds.push(pairs);
+    var fixed = arr[0];
+    var rest = arr.slice(1);
+    rest.unshift(rest.pop());
+    arr = [fixed].concat(rest);
+  }
+  return rounds;
+}
+
 function computeRanking(scopeSeanceId){
-  var matches = state.matches.filter(function(m){ return !scopeSeanceId || m.seanceId===scopeSeanceId; });
+  var matches = state.matches.filter(function(m){
+    return (!scopeSeanceId || m.seanceId===scopeSeanceId) && m.scoreA != null && m.scoreB != null;
+  });
   var stats = {};
   state.teams.forEach(function(t){ stats[t.id] = {teamId:t.id, played:0, wins:0, draws:0, losses:0, goalPos:0}; });
   matches.forEach(function(m){
@@ -863,7 +1019,7 @@ function computeRanking(scopeSeanceId){
   list.sort(function(a,b){
     if (b.adjPoints !== a.adjPoints) return b.adjPoints - a.adjPoints;
     if (b.adjGoal !== a.adjGoal) return b.adjGoal - a.adjGoal;
-    return colorOf(a.teamId).label.localeCompare(colorOf(b.teamId).label);
+    return colorForTeam(a.teamId).label.localeCompare(colorForTeam(b.teamId).label);
   });
   return {maxPlayed: maxPlayed, list: list};
 }
@@ -905,14 +1061,14 @@ function computeTirRanking(scopeSeanceId){
   });
   teams.sort(function(a,b){
     var c = cmp(a,b); if (c) return c;
-    return colorOf(a.teamId).label.localeCompare(colorOf(b.teamId).label);
+    return colorForTeam(a.teamId).label.localeCompare(colorForTeam(b.teamId).label);
   });
   return {students: students, teams: teams};
 }
 
 function renderProfClassementTir(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var opts = '<option value="all"'+(state.classementTirScope==='all'?' selected':'')+'>Toutes les séances cumulées</option>' +
+  var opts = '<option value="all"'+(state.classementTirScope==='all'?' selected':'')+'>Toutes les leçons cumulées</option>' +
     state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementTirScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
   var res = state.classementTirResult;
   var tables = '';
@@ -921,14 +1077,14 @@ function renderProfClassementTir(){
     var step = sea ? sea.tirStep : (state.seances[0] ? state.seances[0].tirStep : 0.5);
     var studentRows = res.students.map(function(r, i){
       var stu = studentById(r.studentId);
-      var c = colorOf(r.teamId);
+      var c = colorForTeam(r.teamId);
       if (!stu) return '';
       return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td><td>'+esc(stu.firstName)+'</td>' +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
         '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
     }).join('') || '<tr><td colspan="6" class="empty">Aucun résultat.</td></tr>';
     var teamRows = res.teams.map(function(r, i){
-      var c = colorOf(r.teamId);
+      var c = colorForTeam(r.teamId);
       return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td>' +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
         '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
@@ -951,13 +1107,13 @@ function renderProfClassementTir(){
 
 function renderProfClassement(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var opts = '<option value="all"'+(state.classementScope==='all'?' selected':'')+'>Toutes les séances cumulées</option>' +
+  var opts = '<option value="all"'+(state.classementScope==='all'?' selected':'')+'>Toutes les leçons cumulées</option>' +
     state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
   var res = state.classementResult;
   var table = '';
   if (res){
     var rows = res.list.map(function(r, i){
-      var c = colorOf(r.teamId);
+      var c = colorForTeam(r.teamId);
       return '<tr class="'+(i===0 && r.played>0 ? 'rank-1':'')+'"><td>'+(i+1)+'</td>' +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
         '<td>'+r.played+'</td><td>'+r.wins+'</td><td>'+r.draws+'</td><td>'+r.losses+'</td>' +
@@ -1005,8 +1161,23 @@ function wireDynamic(){
     slider.addEventListener('input', function(){
       state.saisieValue = parseFloat(slider.value);
       var disp = document.getElementById('slider-display');
-      var sea = activeSeance();
-      if (disp) disp.textContent = fmtNum(state.saisieValue, sea ? sea.tirStep : 0.5);
+      if (disp) disp.textContent = fmtNum(state.saisieValue);
+    });
+  }
+  var scoreASlider = document.getElementById('match-scoreA');
+  if (scoreASlider){
+    scoreASlider.addEventListener('input', function(){
+      state.matchForm.scoreA = parseFloat(scoreASlider.value);
+      var disp = document.getElementById('match-scoreA-display');
+      if (disp) disp.textContent = fmtNum(state.matchForm.scoreA);
+    });
+  }
+  var scoreBSlider = document.getElementById('match-scoreB');
+  if (scoreBSlider){
+    scoreBSlider.addEventListener('input', function(){
+      state.matchForm.scoreB = parseFloat(scoreBSlider.value);
+      var disp = document.getElementById('match-scoreB-display');
+      if (disp) disp.textContent = fmtNum(state.matchForm.scoreB);
     });
   }
 }
@@ -1057,7 +1228,9 @@ function handleAction(action, el){
       flash('Classe activée pour les élèves.');
       break;
 
-    case 'toggle-team': toggleTeam(el.getAttribute('data-id')); break;
+    case 'add-team': addTeam(); break;
+    case 'recolor-team': recolorTeam(el.getAttribute('data-id'), el.value); break;
+    case 'delete-team': deleteTeam(el.getAttribute('data-id')); break;
     case 'add-student': addStudent(el.getAttribute('data-team')); break;
     case 'delete-student': db.doc('classes/'+state.adminClassId+'/students/'+el.getAttribute('data-id')).delete(); break;
 
@@ -1065,7 +1238,7 @@ function handleAction(action, el){
     case 'delete-seance': deleteSeance(el.getAttribute('data-id')); break;
     case 'set-active-seance':
       db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: el.getAttribute('data-id')}));
-      flash('Séance activée pour les élèves.');
+      flash('Leçon activée pour les élèves.');
       break;
 
     case 'filter-resultats': state.profSeanceFilter = el.value || null; render(); break;
@@ -1077,8 +1250,17 @@ function handleAction(action, el){
     case 'delete-tir': db.doc('classes/'+state.adminClassId+'/tirs/'+el.getAttribute('data-id')).delete(); break;
 
     case 'match-field': state.matchForm[el.getAttribute('data-f')] = el.value; render(); break;
+    case 'tournament-field': state.tournamentForm[el.getAttribute('data-f')] = el.value; render(); break;
     case 'add-match': addMatch(); break;
-    case 'delete-match': db.doc('classes/'+state.adminClassId+'/matches/'+el.getAttribute('data-id')).delete(); break;
+    case 'edit-match': editMatch(el.getAttribute('data-id')); break;
+    case 'cancel-edit-match':
+      state.matchForm = {seanceId: state.matchForm.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null};
+      render();
+      break;
+    case 'generate-schedule': generateSchedule(); break;
+    case 'delete-match':
+      if (confirm('Supprimer ce match ?')) db.doc('classes/'+state.adminClassId+'/matches/'+el.getAttribute('data-id')).delete();
+      break;
 
     case 'classement-scope': state.classementScope = el.value; state.classementResult = null; render(); break;
     case 'calc-classement':
@@ -1132,7 +1314,7 @@ function deleteCollectionDocs(path){
   });
 }
 function deleteClass(id){
-  if (!confirm('Supprimer cette classe et toutes ses données (équipes, élèves, séances, résultats, matchs) ?')) return;
+  if (!confirm('Supprimer cette classe et toutes ses données (équipes, élèves, leçons, résultats, matchs) ?')) return;
   var base = 'classes/'+id;
   Promise.all([
     deleteCollectionDocs(base+'/teams'),
@@ -1149,18 +1331,55 @@ function deleteClass(id){
   }
 }
 
-function toggleTeam(colorId){
-  var ref = state.db.doc('classes/'+state.adminClassId+'/teams/'+colorId);
-  var existing = teamById(colorId);
-  if (existing){
-    var students = studentsOfTeam(colorId);
-    if (students.length && !confirm('Cette équipe contient '+students.length+' élève(s). Les retirer aussi ?')) return;
-    Promise.all(students.map(function(s){
-      return state.db.doc('classes/'+state.adminClassId+'/students/'+s.id).delete();
-    })).then(function(){ return ref.delete(); });
-  } else {
-    ref.set({createdAt: Date.now()});
+function addTeam(){
+  var used = usedColorIds(null);
+  var free = TEAM_COLORS.find(function(c){ return used.indexOf(c.id) === -1; });
+  if (!free){ flash('Les 9 couleurs sont déjà utilisées.', 'error'); return; }
+  state.db.collection('classes/'+state.adminClassId+'/teams').add({color: free.id, createdAt: Date.now()});
+}
+function recolorTeam(teamId, newColorId){
+  var t = teamById(teamId);
+  if (!t) return;
+  var oldColorId = t.color || t.id;
+  if (oldColorId === newColorId) return;
+  var swapWith = state.teams.find(function(other){ return other.id !== teamId && (other.color || other.id) === newColorId; });
+  var base = 'classes/'+state.adminClassId+'/teams/';
+  function bodyWithColor(team, colorId){
+    var b = Object.assign({}, team);
+    delete b.id;
+    b.color = colorId;
+    return b;
   }
+  var writes = [ state.db.doc(base+teamId).set(bodyWithColor(t, newColorId)) ];
+  if (swapWith){
+    writes.push(state.db.doc(base+swapWith.id).set(bodyWithColor(swapWith, oldColorId)));
+  }
+  Promise.all(writes).then(function(){
+    flash(swapWith ? 'Couleurs échangées.' : 'Couleur mise à jour.');
+  });
+}
+function deleteTeam(teamId){
+  var t = teamById(teamId);
+  if (!t) return;
+  var students = studentsOfTeam(teamId);
+  var relatedMatches = state.matches.filter(function(m){ return m.teamAId===teamId || m.teamBId===teamId; });
+  var relatedTirs = state.tirs.filter(function(tir){ return tir.teamId===teamId; });
+  var warnParts = [];
+  if (students.length) warnParts.push(students.length+' élève(s)');
+  if (relatedMatches.length) warnParts.push(relatedMatches.length+' match(s)');
+  if (relatedTirs.length) warnParts.push(relatedTirs.length+' résultat(s) de tir');
+  var msg = 'Supprimer cette équipe ?' + (warnParts.length ? ' Cela supprimera aussi : '+warnParts.join(', ')+'.' : '');
+  if (!confirm(msg)) return;
+  var base = 'classes/'+state.adminClassId;
+  Promise.all(
+    students.map(function(s){ return state.db.doc(base+'/students/'+s.id).delete(); })
+    .concat(relatedMatches.map(function(m){ return state.db.doc(base+'/matches/'+m.id).delete(); }))
+    .concat(relatedTirs.map(function(tir){ return state.db.doc(base+'/tirs/'+tir.id).delete(); }))
+  ).then(function(){
+    return state.db.doc(base+'/teams/'+teamId).delete();
+  }).then(function(){
+    flash('Équipe supprimée.');
+  });
 }
 function addStudent(teamId){
   var input = document.getElementById('new-student-'+teamId);
@@ -1171,20 +1390,19 @@ function addStudent(teamId){
 }
 
 function createSeance(){
-  var label = document.getElementById('new-seance-label').value.trim() || ('Séance du ' + document.getElementById('new-seance-date').value);
+  var label = document.getElementById('new-seance-label').value.trim() || ('Leçon du ' + document.getElementById('new-seance-date').value);
   var date = document.getElementById('new-seance-date').value;
-  var min = parseFloat(document.getElementById('new-seance-min').value);
-  var max = parseFloat(document.getElementById('new-seance-max').value);
-  var step = parseFloat(document.getElementById('new-seance-step').value);
+  var min = Math.round(parseFloat(document.getElementById('new-seance-min').value));
+  var max = Math.round(parseFloat(document.getElementById('new-seance-max').value));
   state.db.collection('classes/'+state.adminClassId+'/seances').add({
-    label: label, date: date, tirMin: min, tirMax: max, tirStep: step, createdAt: Date.now()
+    label: label, date: date, tirMin: min, tirMax: max, tirStep: 1, createdAt: Date.now()
   }).then(function(ref){
     state.db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: ref.id}));
-    flash('Séance créée et activée.');
+    flash('Leçon créée et activée.');
   });
 }
 function deleteSeance(id){
-  if (!confirm('Supprimer cette séance ainsi que ses résultats de tir et ses matchs ?')) return;
+  if (!confirm('Supprimer cette leçon ainsi que ses résultats de tir et ses matchs ?')) return;
   var base = 'classes/'+state.adminClassId;
   Promise.all([
     state.db.collection(base+'/tirs').where('seanceId','==',id).get().then(function(snap){
@@ -1206,21 +1424,74 @@ function addMatch(){
   var f = state.matchForm;
   var scoreA = parseFloat(document.getElementById('match-scoreA').value) || 0;
   var scoreB = parseFloat(document.getElementById('match-scoreB').value) || 0;
+  if (f.editingId){
+    state.db.doc('classes/'+state.adminClassId+'/matches/'+f.editingId).update({
+      scoreA: scoreA, scoreB: scoreB, ts: Date.now()
+    }).then(function(){
+      flash('Score enregistré.');
+      state.matchForm = {seanceId: f.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null};
+      render();
+    });
+    return;
+  }
   if (f.teamA === f.teamB){ flash('Choisissez deux équipes différentes.', 'error'); return; }
   state.db.collection('classes/'+state.adminClassId+'/matches').add({
     seanceId: f.seanceId, teamAId: f.teamA, teamBId: f.teamB, scoreA: scoreA, scoreB: scoreB, ts: Date.now()
   }).then(function(){ flash('Match ajouté.'); });
 }
 
+function editMatch(matchId){
+  var m = state.matches.find(function(x){return x.id===matchId;});
+  if (!m) return;
+  state.matchForm = {
+    seanceId: m.seanceId, teamA: m.teamAId, teamB: m.teamBId,
+    scoreA: m.scoreA != null ? m.scoreA : 0, scoreB: m.scoreB != null ? m.scoreB : 0,
+    editingId: matchId
+  };
+  render();
+}
+
+function generateSchedule(){
+  var tf = state.tournamentForm;
+  var courts = Math.max(1, parseInt(document.getElementById('tournament-courts').value, 10) || 1);
+  var teamIds = state.teams.map(function(t){return t.id;});
+  if (teamIds.length < 2){ flash('Il faut au moins deux équipes.', 'error'); return; }
+  var existingScheduled = state.matches.filter(function(m){ return m.seanceId===tf.seanceId && m.scoreA == null; });
+  var doGenerate = function(){
+    var rounds = generateRoundRobinPairs(teamIds);
+    var writes = [];
+    rounds.forEach(function(pairs, ri){
+      pairs.forEach(function(pair, pi){
+        var slot = Math.floor(pi / courts) + 1;
+        writes.push(state.db.collection('classes/'+state.adminClassId+'/matches').add({
+          seanceId: tf.seanceId, teamAId: pair[0], teamBId: pair[1],
+          scoreA: null, scoreB: null, round: ri+1, slot: slot, ts: Date.now()
+        }));
+      });
+    });
+    Promise.all(writes).then(function(){
+      flash('Programme généré : '+writes.length+' match(s) sur '+rounds.length+' ronde(s).');
+    });
+  };
+  if (existingScheduled.length){
+    if (!confirm('Un programme non joué existe déjà pour cette leçon ('+existingScheduled.length+' match(s) à jouer). Le remplacer ?')) return;
+    Promise.all(existingScheduled.map(function(m){
+      return state.db.doc('classes/'+state.adminClassId+'/matches/'+m.id).delete();
+    })).then(doGenerate);
+  } else {
+    doGenerate();
+  }
+}
+
 function exportCsv(){
   var filterId = state.profSeanceFilter;
   var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
-  var lines = ['Séance;Équipe;Élève;Série 1;Série 2'];
+  var lines = ['Leçon;Équipe;Élève;Série 1;Série 2'];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
     var sea = seanceById(t.seanceId);
     if (!stu || !sea) return;
-    lines.push([sea.label, colorOf(t.teamId).label, stu.firstName, t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:''].join(';'));
+    lines.push([sea.label, colorForTeam(t.teamId).label, stu.firstName, t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:''].join(';'));
   });
   var csv = lines.join('\n');
   getDownloads().then(function(d){
@@ -1233,19 +1504,21 @@ function exportXlsx(){
   var filterId = state.profSeanceFilter;
   var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
 
-  var resultRows = [['Séance','Date','Équipe','Élève','Série 1','Série 2']];
+  var resultRows = [['Leçon','Date','Équipe','Élève','Série 1','Série 2']];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
     var sea = seanceById(t.seanceId);
     if (!stu || !sea) return;
-    resultRows.push([sea.label, sea.date||'', colorOf(t.teamId).label, stu.firstName,
+    resultRows.push([sea.label, sea.date||'', colorForTeam(t.teamId).label, stu.firstName,
       t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:'']);
   });
 
-  var matchRows = [['Séance','Équipe A','Score A','Score B','Équipe B']];
-  state.matches.slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);}).forEach(function(m){
+  var matchRows = [['Leçon','Ronde','Équipe A','Score A','Score B','Équipe B','Statut']];
+  state.matches.slice().sort(function(a,b){return (a.round||0)-(b.round||0) || (a.ts||0)-(b.ts||0);}).forEach(function(m){
     var sea = seanceById(m.seanceId);
-    matchRows.push([sea?sea.label:'', colorOf(m.teamAId).label, m.scoreA, m.scoreB, colorOf(m.teamBId).label]);
+    var played = m.scoreA != null;
+    matchRows.push([sea?sea.label:'', m.round||'', colorForTeam(m.teamAId).label,
+      played?m.scoreA:'', played?m.scoreB:'', colorForTeam(m.teamBId).label, played?'joué':'à jouer']);
   });
 
   var wb = XLSX.utils.book_new();
@@ -1254,7 +1527,7 @@ function exportXlsx(){
   if (state.classementResult){
     var rankRows = [['Rang','Équipe','Matchs joués','Victoires','Nuls','Défaites','Coefficient','Points ajustés','Goal average positif ajusté']];
     state.classementResult.list.forEach(function(r, i){
-      rankRows.push([i+1, colorOf(r.teamId).label, r.played, r.wins, r.draws, r.losses,
+      rankRows.push([i+1, colorForTeam(r.teamId).label, r.played, r.wins, r.draws, r.losses,
         Number(r.coef.toFixed(2)), Number(r.adjPoints.toFixed(2)), Number(r.adjGoal.toFixed(2))]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rankRows), 'Classement matchs');
@@ -1263,12 +1536,12 @@ function exportXlsx(){
     var stuRows = [['Rang','Élève','Équipe','Séries','Moyenne','Meilleure série']];
     state.classementTirResult.students.forEach(function(r, i){
       var stu = studentById(r.studentId);
-      stuRows.push([i+1, stu?stu.firstName:'', colorOf(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
+      stuRows.push([i+1, stu?stu.firstName:'', colorForTeam(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(stuRows), 'Classement précision élèves');
     var teamPrecRows = [['Rang','Équipe','Séries','Moyenne','Meilleure série']];
     state.classementTirResult.teams.forEach(function(r, i){
-      teamPrecRows.push([i+1, colorOf(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
+      teamPrecRows.push([i+1, colorForTeam(r.teamId).label, r.n, Number(r.avg.toFixed(2)), r.best]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamPrecRows), 'Classement précision équipes');
   }
@@ -1379,10 +1652,11 @@ document.getElementById('app').addEventListener('change', function(e){
 init();
 })();
 </script>
+
 <script>
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.warn('SW registration failed', e); });
+    navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.error('SW registration failed', e); });
   });
 }
 </script>

@@ -5,7 +5,7 @@ unique mise à disposition de la classe) et le classement des équipes,
 en EPS.
 
 Elle fonctionne **entièrement hors-ligne, sans compte ni serveur** : toutes
-les données (classes, équipes, élèves, séances, résultats, matchs) sont
+les données (classes, équipes, élèves, leçons, résultats, matchs) sont
 stockées directement sur la tablette, dans le navigateur. C'est une PWA
 (Progressive Web App) : elle peut s'installer comme une vraie application,
 avec son icône, et continuer de fonctionner sans connexion internet une
@@ -59,8 +59,9 @@ stockées localement — pensez à sauvegarder avant.
 - `index.html` — l'application (page unique, HTML/CSS/JS).
 - `manifest.json` — le manifeste PWA (nom, icônes, couleurs).
 - `service-worker.js` — mise en cache pour le fonctionnement hors-ligne.
-- `logo.png`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` —
-  le logo et ses déclinaisons pour l'icône de l'app.
+- `logo.png` et les fichiers `icon-*.png` / `apple-touch-icon.png` —
+  le logo et ses déclinaisons (Android, iPad/iPhone, Windows) pour l'icône
+  de l'app, afin qu'elle s'installe correctement sur tout type de tablette.
 
 ## À propos de la version « Artifact Claude »
 
