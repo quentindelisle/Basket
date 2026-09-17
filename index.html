@@ -227,6 +227,13 @@ tr.rank-1 td{background:var(--accent-soft);}
 .absent-row{opacity:.55;}
 .absent-row .chip.absent{background:var(--danger);}
 
+.toggle-btn{
+  font-family:'Manrope';font-weight:700;font-size:12px;
+  border:1px solid var(--border);background:var(--surface);color:var(--ink-dim);
+  border-radius:999px;padding:7px 12px;cursor:pointer;margin-top:6px;width:100%;
+}
+.toggle-btn.active{background:var(--good);border-color:var(--good);color:#fff;}
+
 </style>
 </head>
 <body>
@@ -240,7 +247,7 @@ tr.rank-1 td{background:var(--accent-soft);}
   </div>
   <div id="screen"><div class="empty">Chargement…</div></div>
 </div>
-<div class="app-signature">by Quentin Delisle</div>
+<div class="app-signature">By Hugo Bredin &amp; Quentin Delisle</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -287,7 +294,9 @@ var state = {
   classementResult: null,
   classementTirScope: 'all',
   classementTirResult: null,
-  matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null},
+  classementGeneralScope: 'all',
+  classementGeneralResult: null,
+  matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null},
   tournamentForm: {seanceId:null, courts:1},
   roundEntry: {},
   roundTimer: {duration:480, remaining:480, running:false, ended:false, forRound:null},
@@ -757,7 +766,7 @@ function renderEleveMatchs(){
   var locked = !state.roundTimer.ended;
 
   var matchesHtml = cur.matches.map(function(m){
-    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0};
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     var maxScore = Math.max(50, Math.round(entry.scoreA)||0, Math.round(entry.scoreB)||0);
     var namesA = teamPlayersNames(m.teamAId, seaId);
@@ -778,10 +787,12 @@ function renderEleveMatchs(){
           '<div class="field slider-field">' +
             '<label>Score '+esc(ca.label)+' — <span id="rd-scoreA-disp-'+m.id+'">'+Math.round(entry.scoreA)+'</span></label>' +
             '<input type="range" class="rd-score" data-side="A" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreA)+'">' +
+            '<button class="toggle-btn'+(entry.scorersA?' active':'')+'" data-action="toggle-scorers3" data-side="A" data-id="'+m.id+'">'+(entry.scorersA?'✓ ':'')+'3 marqueurs différents ('+esc(ca.label)+')</button>' +
           '</div>' +
           '<div class="field slider-field">' +
             '<label>Score '+esc(cb.label)+' — <span id="rd-scoreB-disp-'+m.id+'">'+Math.round(entry.scoreB)+'</span></label>' +
             '<input type="range" class="rd-score" data-side="B" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreB)+'">' +
+            '<button class="toggle-btn'+(entry.scorersB?' active':'')+'" data-action="toggle-scorers3" data-side="B" data-id="'+m.id+'">'+(entry.scorersB?'✓ ':'')+'3 marqueurs différents ('+esc(cb.label)+')</button>' +
           '</div>' +
         '</div>'
       )) +
@@ -809,7 +820,8 @@ function renderProf(){
     ['resultats','Résultats tir'],
     ['matchs','Matchs'],
     ['classement-tir','Classement précision'],
-    ['classement','Classement matchs']
+    ['classement','Classement matchs'],
+    ['classement-general','Classement général']
   ];
   var tabsHtml = tabs.map(function(t){
     return '<button class="tab-btn'+(state.adminTab===t[0]?' active':'')+'" data-action="prof-tab" data-tab="'+t[0]+'">'+t[1]+'</button>';
@@ -823,6 +835,7 @@ function renderProf(){
     case 'matchs': body = renderProfMatchs(); break;
     case 'classement-tir': body = renderProfClassementTir(); break;
     case 'classement': body = renderProfClassement(); break;
+    case 'classement-general': body = renderProfClassementGeneral(); break;
     default: body = '';
   }
   return '<div><div class="tabs">'+tabsHtml+'</div><div id="prof-body">'+body+'</div></div>';
@@ -1113,10 +1126,12 @@ function renderProfMatchs(){
           '<div class="field slider-field">' +
             '<label>Score A — <span id="match-scoreA-display">'+Math.round(f.scoreA)+'</span></label>' +
             '<input type="range" id="match-scoreA" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreA)+'">' +
+            '<button class="toggle-btn'+(f.scorersA?' active':'')+'" data-action="match-scorers-toggle" data-side="A">'+(f.scorersA?'✓ ':'')+'3 marqueurs différents ('+esc(ca.label)+')</button>' +
           '</div>' +
           '<div class="field slider-field">' +
             '<label>Score B — <span id="match-scoreB-display">'+Math.round(f.scoreB)+'</span></label>' +
             '<input type="range" id="match-scoreB" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreB)+'">' +
+            '<button class="toggle-btn'+(f.scorersB?' active':'')+'" data-action="match-scorers-toggle" data-side="B">'+(f.scorersB?'✓ ':'')+'3 marqueurs différents ('+esc(cb.label)+')</button>' +
           '</div>' +
         '</div>' +
         '<div class="btn-row">' +
@@ -1266,6 +1281,89 @@ function computeTirRanking(scopeSeanceId){
   return {students: students, teams: teams};
 }
 
+// ---- classement général (points cumulés tir + matchs, par leçon et sur le cycle) ----
+// Points matchs (par ronde, pour chaque équipe) : victoire (5 pts si 3 marqueurs
+// différents, sinon 4) / égalité (3 pts si 3 marqueurs différents, sinon 2) /
+// défaite (3 pts si 3 marqueurs différents, sinon 1).
+var MATCH_POINTS_TABLE = {
+  win:  {three:5, normal:4},
+  draw: {three:3, normal:2},
+  loss: {three:3, normal:1}
+};
+function matchPointsFor(result, hasThree){
+  return MATCH_POINTS_TABLE[result][hasThree ? 'three' : 'normal'];
+}
+// Points de la série de tir pour une leçon donnée : les équipes sont classées
+// sur leur total de points pondéré (pour ne pas pénaliser une équipe à
+// l'effectif réduit — équipe à 3, ou élève absent — son total est ramené à
+// l'équivalent du nombre de tireurs le plus élevé parmi les équipes de la
+// leçon), puis reçoivent n-1, n-2, ... 0 points selon leur rang (n = nombre
+// d'équipes).
+function tirPointsForSeance(seanceId){
+  var teams = state.teams;
+  var perTeam = teams.map(function(t){
+    var studentIds = studentsOfTeam(t.id).map(function(s){ return s.id; });
+    var shooters = 0, rawTotal = 0;
+    state.tirs.forEach(function(tir){
+      if (tir.seanceId !== seanceId || studentIds.indexOf(tir.studentId) === -1) return;
+      var has = false;
+      if (tir.serie1 != null) { rawTotal += tir.serie1; has = true; }
+      if (tir.serie2 != null) { rawTotal += tir.serie2; has = true; }
+      if (has) shooters++;
+    });
+    return {teamId: t.id, shooters: shooters, rawTotal: rawTotal};
+  });
+  var maxShooters = perTeam.reduce(function(m, r){ return Math.max(m, r.shooters); }, 0);
+  perTeam.forEach(function(r){
+    r.weighted = (r.shooters > 0 && maxShooters > 0) ? r.rawTotal * (maxShooters / r.shooters) : 0;
+  });
+  perTeam.sort(function(a, b){
+    if (b.weighted !== a.weighted) return b.weighted - a.weighted;
+    return colorForTeam(a.teamId).label.localeCompare(colorForTeam(b.teamId).label);
+  });
+  var n = perTeam.length;
+  var points = {};
+  perTeam.forEach(function(r, i){ points[r.teamId] = {points: Math.max(0, n - 1 - i), weighted: r.weighted, shooters: r.shooters}; });
+  return points;
+}
+function matchPointsForSeance(seanceId){
+  var points = {};
+  state.teams.forEach(function(t){ points[t.id] = 0; });
+  state.matches.forEach(function(m){
+    if (m.seanceId !== seanceId || m.scoreA == null || m.scoreB == null) return;
+    var diff = m.scoreA - m.scoreB;
+    var resultA = diff > 0 ? 'win' : (diff < 0 ? 'loss' : 'draw');
+    var resultB = diff > 0 ? 'loss' : (diff < 0 ? 'win' : 'draw');
+    if (points[m.teamAId] != null) points[m.teamAId] += matchPointsFor(resultA, !!m.scorersA3);
+    if (points[m.teamBId] != null) points[m.teamBId] += matchPointsFor(resultB, !!m.scorersB3);
+  });
+  return points;
+}
+function computeGeneralRanking(scopeSeanceId){
+  var seances = scopeSeanceId ? state.seances.filter(function(s){ return s.id===scopeSeanceId; }) : state.seances;
+  var totals = {};
+  state.teams.forEach(function(t){ totals[t.id] = {teamId:t.id, tirPoints:0, matchPoints:0}; });
+  var bySeance = seances.map(function(sea){
+    var tirPts = tirPointsForSeance(sea.id);
+    var matchPts = matchPointsForSeance(sea.id);
+    state.teams.forEach(function(t){
+      var tp = (tirPts[t.id] && tirPts[t.id].points) || 0;
+      var mp = matchPts[t.id] || 0;
+      totals[t.id].tirPoints += tp;
+      totals[t.id].matchPoints += mp;
+    });
+    return {seance: sea, tirPts: tirPts, matchPts: matchPts};
+  });
+  var list = Object.values(totals).map(function(t){
+    return Object.assign({}, t, {total: t.tirPoints + t.matchPoints});
+  });
+  list.sort(function(a, b){
+    if (b.total !== a.total) return b.total - a.total;
+    return colorForTeam(a.teamId).label.localeCompare(colorForTeam(b.teamId).label);
+  });
+  return {list: list, bySeance: bySeance, scopeSeanceId: scopeSeanceId};
+}
+
 function renderProfClassementTir(){
   var warn = requireAdminClass(); if (warn) return warn;
   var opts = '<option value="all"'+(state.classementTirScope==='all'?' selected':'')+'>Toutes les leçons cumulées</option>' +
@@ -1333,6 +1431,47 @@ function renderProfClassement(){
   );
 }
 
+function renderProfClassementGeneral(){
+  var warn = requireAdminClass(); if (warn) return warn;
+  var opts = '<option value="all"'+(state.classementGeneralScope==='all'?' selected':'')+'>Toutes les leçons du cycle (cumulé)</option>' +
+    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementGeneralScope===s.id?' selected':'')+'>'+esc(s.label)+' (cette leçon)</option>'; }).join('');
+  var res = state.classementGeneralResult;
+  var table = '';
+  if (res){
+    var rows = res.list.map(function(r, i){
+      var c = colorForTeam(r.teamId);
+      return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td>' +
+        '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+        '<td>'+r.tirPoints+'</td><td>'+r.matchPoints+'</td><td><strong>'+r.total+'</strong></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="empty">Aucune équipe.</td></tr>';
+    table = '<div class="card table-wrap"><table><thead><tr><th>Rang</th><th>Équipe</th><th>Pts précision</th><th>Pts matchs</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    if (res.bySeance.length > 1){
+      var detailRows = res.bySeance.map(function(entry){
+        var lines = state.teams.map(function(t){
+          var tp = (entry.tirPts[t.id] && entry.tirPts[t.id].points) || 0;
+          var mp = entry.matchPts[t.id] || 0;
+          var c = colorForTeam(t.id);
+          return '<span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span> '+tp+'+'+mp+'='+(tp+mp);
+        }).join(' · ');
+        return '<div class="list-row"><div><strong>'+esc(entry.seance.label)+'</strong></div><div class="muted" style="text-align:right">'+lines+'</div></div>';
+      }).join('');
+      table += '<div class="card stack"><div class="eyebrow">Détail par leçon (précision + matchs = total)</div>'+detailRows+'</div>';
+    }
+  }
+  return (
+    '<div class="stack">' +
+      '<div class="row">' +
+        '<div class="field"><label>Portée</label><select id="classement-general-scope" data-action="classement-general-scope">'+opts+'</select></div>' +
+        '<button class="btn primary" data-action="calc-classement-general">Calculer le classement</button>' +
+      '</div>' +
+      '<p class="muted">Classement général = points « précision au tir » + points « matchs », pour la leçon choisie ou cumulés sur tout le cycle. ' +
+      'Précision : l\'équipe qui a le plus marqué (total pondéré selon le nombre de tireurs, pour ne pas pénaliser une équipe à effectif réduit ou avec un·e absent·e) reçoit n-1 points, la suivante n-2, jusqu\'à 0 pour la dernière (n = nombre d\'équipes). ' +
+      'Matchs, par ronde : victoire 4 pts (5 si 3 marqueurs différents) / égalité 2 pts (3 si 3 marqueurs différents) / défaite 1 pt (3 si 3 marqueurs différents).</p>' +
+      table +
+    '</div>'
+  );
+}
+
 // ---------- render dispatch ----------
 function render(){
   renderTopbarActions();
@@ -1387,7 +1526,7 @@ function wireDynamic(){
     (function(sl){
       sl.addEventListener('input', function(){
         var id = sl.getAttribute('data-id'), side = sl.getAttribute('data-side');
-        if (!state.roundEntry[id]) state.roundEntry[id] = {scoreA:0, scoreB:0};
+        if (!state.roundEntry[id]) state.roundEntry[id] = {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
         state.roundEntry[id]['score'+side] = parseFloat(sl.value);
         var disp = document.getElementById('rd-score'+side+'-disp-'+id);
         if (disp) disp.textContent = fmtNum(state.roundEntry[id]['score'+side]);
@@ -1438,6 +1577,12 @@ function handleAction(action, el){
       setView('eleve-matchs');
       break;
     case 'save-round-scores': saveRoundScores(); break;
+    case 'toggle-scorers3':
+      var rid = el.getAttribute('data-id'), rside = el.getAttribute('data-side');
+      if (!state.roundEntry[rid]) state.roundEntry[rid] = {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
+      state.roundEntry[rid]['scorers'+rside] = !state.roundEntry[rid]['scorers'+rside];
+      render();
+      break;
     case 'toggle-absence': toggleAbsence(el.getAttribute('data-seance'), el.getAttribute('data-id')); break;
     case 'timer-start': startTimer(); break;
     case 'timer-pause': pauseTimer(); break;
@@ -1450,7 +1595,7 @@ function handleAction(action, el){
       render();
       break;
 
-    case 'prof-tab': state.adminTab = el.getAttribute('data-tab'); state.classementResult=null; state.classementTirResult=null; render(); break;
+    case 'prof-tab': state.adminTab = el.getAttribute('data-tab'); state.classementResult=null; state.classementTirResult=null; state.classementGeneralResult=null; render(); break;
     case 'select-admin-class':
       state.adminClassId = el.getAttribute('data-id');
       ensureClassSubscribed(state.adminClassId);
@@ -1488,8 +1633,13 @@ function handleAction(action, el){
     case 'tournament-field': state.tournamentForm[el.getAttribute('data-f')] = el.value; render(); break;
     case 'add-match': addMatch(); break;
     case 'edit-match': editMatch(el.getAttribute('data-id')); break;
+    case 'match-scorers-toggle':
+      var mside = el.getAttribute('data-side');
+      state.matchForm['scorers'+mside] = !state.matchForm['scorers'+mside];
+      render();
+      break;
     case 'cancel-edit-match':
-      state.matchForm = {seanceId: state.matchForm.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null};
+      state.matchForm = {seanceId: state.matchForm.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
       render();
       break;
     case 'generate-schedule': generateSchedule(); break;
@@ -1505,6 +1655,11 @@ function handleAction(action, el){
     case 'classement-tir-scope': state.classementTirScope = el.value; state.classementTirResult = null; render(); break;
     case 'calc-classement-tir':
       state.classementTirResult = computeTirRanking(state.classementTirScope === 'all' ? null : state.classementTirScope);
+      render();
+      break;
+    case 'classement-general-scope': state.classementGeneralScope = el.value; state.classementGeneralResult = null; render(); break;
+    case 'calc-classement-general':
+      state.classementGeneralResult = computeGeneralRanking(state.classementGeneralScope === 'all' ? null : state.classementGeneralScope);
       render();
       break;
   }
@@ -1540,14 +1695,16 @@ function saveRoundScores(){
   if (!state.roundTimer.ended){ flash('Attends la fin du temps (ou clique sur « Fin ») avant de saisir les scores.', 'error'); return; }
   var classId = state.config.activeClassId;
   var writes = cur.matches.map(function(m){
-    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0};
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
     return state.db.doc('classes/'+classId+'/matches/'+m.id).update({
-      scoreA: Math.round(entry.scoreA)||0, scoreB: Math.round(entry.scoreB)||0, ts: Date.now()
+      scoreA: Math.round(entry.scoreA)||0, scoreB: Math.round(entry.scoreB)||0,
+      scorersA3: !!entry.scorersA, scorersB3: !!entry.scorersB, ts: Date.now()
     });
   });
   Promise.all(writes).then(function(){
     state.roundEntry = {};
     state.classementResult = computeRanking(null);
+    state.classementGeneralResult = null;
     flash('Scores enregistrés, le classement est à jour.');
     setView('home');
   }).catch(function(e){
@@ -1751,10 +1908,11 @@ function addMatch(){
   var scoreA = parseFloat(document.getElementById('match-scoreA').value) || 0;
   var scoreB = parseFloat(document.getElementById('match-scoreB').value) || 0;
   state.db.doc('classes/'+state.adminClassId+'/matches/'+f.editingId).update({
-    scoreA: scoreA, scoreB: scoreB, ts: Date.now()
+    scoreA: scoreA, scoreB: scoreB, scorersA3: !!f.scorersA, scorersB3: !!f.scorersB, ts: Date.now()
   }).then(function(){
     flash('Score corrigé.');
-    state.matchForm = {seanceId: f.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, editingId:null};
+    state.matchForm = {seanceId: f.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
+    state.classementGeneralResult = null;
     render();
   });
 }
@@ -1765,6 +1923,7 @@ function editMatch(matchId){
   state.matchForm = {
     seanceId: m.seanceId, teamA: m.teamAId, teamB: m.teamBId,
     scoreA: m.scoreA != null ? m.scoreA : 0, scoreB: m.scoreB != null ? m.scoreB : 0,
+    scorersA: !!m.scorersA3, scorersB: !!m.scorersB3,
     editingId: matchId
   };
   render();
@@ -1784,7 +1943,7 @@ function generateSchedule(){
         var slot = Math.floor(pi / courts) + 1;
         writes.push(state.db.collection('classes/'+state.adminClassId+'/matches').add({
           seanceId: tf.seanceId, teamAId: pair[0], teamBId: pair[1],
-          scoreA: null, scoreB: null, round: ri+1, slot: slot, ts: Date.now()
+          scoreA: null, scoreB: null, scorersA3: false, scorersB3: false, round: ri+1, slot: slot, ts: Date.now()
         }));
       });
     });
