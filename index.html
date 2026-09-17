@@ -4,26 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TirScore</title>
+<meta name="description" content="Saisie des scores de tir et classement d'équipes pour l'EPS">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ff4d1c">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TirScore">
-<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
-<link rel="apple-touch-icon" sizes="167x167" href="icon-167.png">
-<link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="msapplication-TileImage" content="icon-192.png">
+<meta name="msapplication-TileImage" content="icon-256.png">
 <meta name="msapplication-TileColor" content="#ff4d1c">
 <style>
-:root{color-scheme:light}
-body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}
-img{max-width:100%}
-</style>
-<style>
+
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root{
@@ -229,11 +226,10 @@ tr.rank-1 td{background:var(--accent-soft);}
 
 .absent-row{opacity:.55;}
 .absent-row .chip.absent{background:var(--danger);}
+
 </style>
 </head>
 <body>
-
-
 <div id="app">
   <div class="topbar">
     <div class="brand">
@@ -245,7 +241,6 @@ tr.rank-1 td{background:var(--accent-soft);}
   <div id="screen"><div class="empty">Chargement…</div></div>
 </div>
 <div class="app-signature">by Quentin Delisle</div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -705,13 +700,24 @@ function renderEleveFiche(){
     return '<div class="serie-card"><div><strong>Série '+n+'</strong><div class="serie-empty">Pas encore saisie</div></div>'+
       '<button class="btn primary" data-action="start-saisie" data-serie="'+n+'">Saisir</button></div>';
   }
+  var teammates = studentsOfTeam(state.student.teamId).filter(function(s){
+    return s.id !== stu.id && !isAbsent(sea.id, s.id);
+  });
+  var teammatesHtml = teammates.length ? (
+    '<div class="eyebrow">Autres élèves de cette équipe</div>' +
+    '<div class="name-grid">' +
+      teammates.map(function(s){
+        return '<button class="name-btn" data-action="pick-student" data-id="'+s.id+'">'+esc(s.firstName)+'</button>';
+      }).join('') +
+    '</div>'
+  ) : '';
   return (
     '<div class="stack center">' +
       '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</div>' +
       '<h2>'+esc(stu.firstName)+'</h2>' +
       '<p class="muted">'+esc(sea.label)+' — deux séries de 10 tirs autorisées.</p>' +
       serieBlock(1) + serieBlock(2) +
-      '<button class="btn primary big" data-action="pick-team" data-id="'+state.student.teamId+'">Élève suivant (même équipe)</button>' +
+      teammatesHtml +
       '<button class="btn-nav" data-action="go-eleve-precision"><span class="nav-arrow back">&larr;</span>Changer d\'équipe</button>' +
     '</div>'
   );
@@ -1967,9 +1973,8 @@ document.getElementById('app').addEventListener('change', function(e){
 init();
 })();
 </script>
-
 <script>
-if ('serviceWorker' in navigator){
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.error('SW registration failed', e); });
   });
