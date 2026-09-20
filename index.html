@@ -279,7 +279,7 @@ function swatchStyle(c){
 
 // Numéro de version affiché en bas à gauche de l'écran, à incrémenter à
 // chaque nouvelle mise à jour de l'application.
-var APP_VERSION = 'v1.8';
+var APP_VERSION = 'v1.9';
 (function(){
   var el = document.getElementById('app-version');
   if (el) el.textContent = APP_VERSION;
@@ -1019,30 +1019,29 @@ function renderProfSeances(){
 
 function renderProfResultats(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var filterId = state.profSeanceFilter;
-  var options = '<option value="">Toutes les leçons</option>' + state.seances.map(function(s){
-    return '<option value="'+s.id+'"'+(filterId===s.id?' selected':'')+'>'+esc(s.label)+'</option>';
-  }).join('');
-  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+  var sea = activeSeance();
+  if (!sea){
+    return '<div class="card empty">Aucune leçon en cours. Activez une leçon dans l\'onglet « Leçons » pour voir et saisir ses résultats.<br><br><span class="muted">Pour consulter les résultats d\'une leçon plus ancienne, utilisez le classement (onglets « Classement précision » et « Classement général »), qui couvre toutes les leçons passées.</span></div>';
+  }
+  var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
   var rows = tirs.map(function(t){
     var stu = studentById(t.studentId);
-    var sea = seanceById(t.seanceId);
     var c = colorForTeam(t.teamId);
-    if (!stu || !sea) return '';
-    return '<tr><td>'+esc(sea.label)+'</td><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+    if (!stu) return '';
+    return '<tr><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
       '<td>'+esc(stu.firstName)+'</td>' +
       '<td>'+(t.serie1!=null?fmtNum(t.serie1,sea.tirStep):'—')+'</td>' +
       '<td>'+(t.serie2!=null?fmtNum(t.serie2,sea.tirStep):'—')+'</td>' +
       '<td><button class="iconbtn" data-action="delete-tir" data-id="'+t.id+'">✕</button></td></tr>';
-  }).join('') || '<tr><td colspan="6" class="empty">Aucun résultat pour le moment.</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="empty">Aucun résultat pour le moment.</td></tr>';
   return (
     '<div class="stack">' +
-      '<div class="row">' +
-        '<div class="field"><label>Filtrer par leçon</label><select id="resultats-filter" data-action="filter-resultats">'+options+'</select></div>' +
+      '<div class="banner info">Leçon en cours : <strong>'+esc(sea.label)+'</strong>. Pour consulter les résultats d\'une leçon plus ancienne, passez par le classement (couvre tout le cycle) — activez une autre leçon dans l\'onglet « Leçons » si vous voulez la corriger.</div>' +
+      '<div class="btn-row">' +
         '<button class="btn" data-action="export-csv">Exporter en CSV</button>' +
         '<button class="btn" data-action="export-xlsx">Exporter en Excel (.xlsx)</button>' +
       '</div>' +
-      '<div class="card table-wrap"><table><thead><tr><th>Leçon</th><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
     '</div>'
   );
 }
@@ -1118,20 +1117,19 @@ function renderProfMatchs(){
   if (state.teams.length < 2) return '<div class="card empty">Il faut au moins deux équipes pour saisir un match.</div>';
   var f = state.matchForm;
   var tf = state.tournamentForm;
-  if (!tf.seanceId || !seanceById(tf.seanceId)) tf.seanceId = state.config.activeSeanceId || state.seances[0].id;
+  var sea = activeSeance();
+  if (!sea){
+    return '<div class="card empty">Aucune leçon en cours. Activez une leçon dans l\'onglet « Leçons » pour programmer ou consulter son tournoi.<br><br><span class="muted">Pour consulter le classement des leçons passées, utilisez l\'onglet « Classement matchs » ou « Classement général ».</span></div>';
+  }
 
-  var tSeaOpts = state.seances.map(function(s){ return '<option value="'+s.id+'"'+(tf.seanceId===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
-
-  var played = state.matches.filter(function(m){ return m.scoreA != null; })
+  var played = state.matches.filter(function(m){ return m.seanceId===sea.id && m.scoreA != null; })
     .sort(function(a,b){return (b.ts||0)-(a.ts||0);});
 
   var cur = currentRoundMatches();
 
   var resultats = played.map(function(m){
-    var sea = seanceById(m.seanceId);
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     return '<div class="list-row"><div>' +
-      '<span class="muted">'+esc(sea?sea.label:'?')+'</span> — ' +
       '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span> ' + m.scoreA + ' – ' + m.scoreB + ' ' +
       '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
       '</div><div class="btn-row">' +
@@ -1193,10 +1191,9 @@ function renderProfMatchs(){
         teamChips +
       '</div>' +
       '<div class="card stack">' +
-        '<div class="eyebrow">Programmer un tournoi</div>' +
-        '<p class="muted">Génère automatiquement les rencontres pour que toutes les équipes s\'affrontent une fois, réparties en rondes (à chaque ronde, toutes les équipes jouent en même temps).</p>' +
+        '<div class="eyebrow">Programmer un tournoi — '+esc(sea.label)+' (leçon en cours)</div>' +
+        '<p class="muted">Génère automatiquement les rencontres pour que toutes les équipes s\'affrontent une fois, réparties en rondes (à chaque ronde, toutes les équipes jouent en même temps). Le tournoi est toujours programmé pour la leçon en cours ; activez une autre leçon dans l\'onglet « Leçons » pour en programmer une autre.</p>' +
         '<div class="row">' +
-          '<div class="field"><label>Leçon</label><select data-action="tournament-field" data-f="seanceId">'+tSeaOpts+'</select></div>' +
           '<div class="field"><label>Terrains disponibles en même temps</label><input type="number" min="1" step="1" id="tournament-courts" value="'+tf.courts+'"></div>' +
           '<button class="btn primary" data-action="generate-schedule">Générer le programme</button>' +
         '</div>' +
@@ -1963,11 +1960,13 @@ function editMatch(matchId){
 }
 
 function generateSchedule(){
-  var tf = state.tournamentForm;
+  var sea = activeSeance();
+  if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
+  var seanceId = sea.id;
   var courts = Math.max(1, parseInt(document.getElementById('tournament-courts').value, 10) || 1);
   var teamIds = state.teams.map(function(t){return t.id;});
   if (teamIds.length < 2){ flash('Il faut au moins deux équipes.', 'error'); return; }
-  var existingScheduled = state.matches.filter(function(m){ return m.seanceId===tf.seanceId && m.scoreA == null; });
+  var existingScheduled = state.matches.filter(function(m){ return m.seanceId===seanceId && m.scoreA == null; });
   var doGenerate = function(){
     var rounds = generateRoundRobinPairs(teamIds);
     var writes = [];
@@ -1975,7 +1974,7 @@ function generateSchedule(){
       pairs.forEach(function(pair, pi){
         var slot = Math.floor(pi / courts) + 1;
         writes.push(state.db.collection('classes/'+state.adminClassId+'/matches').add({
-          seanceId: tf.seanceId, teamAId: pair[0], teamBId: pair[1],
+          seanceId: seanceId, teamAId: pair[0], teamBId: pair[1],
           scoreA: null, scoreB: null, scorersA3: false, scorersB3: false, round: ri+1, slot: slot, ts: Date.now()
         }));
       });
@@ -1995,13 +1994,13 @@ function generateSchedule(){
 }
 
 function exportCsv(){
-  var filterId = state.profSeanceFilter;
-  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+  var sea = activeSeance();
+  if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
+  var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
   var lines = ['Leçon;Équipe;Élève;Série 1;Série 2'];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
-    var sea = seanceById(t.seanceId);
-    if (!stu || !sea) return;
+    if (!stu) return;
     lines.push([sea.label, colorForTeam(t.teamId).label, stu.firstName, t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:''].join(';'));
   });
   var csv = lines.join('\n');
@@ -2012,23 +2011,22 @@ function exportCsv(){
 
 function exportXlsx(){
   if (!window.XLSX){ flash('La bibliothèque Excel n\'a pas pu se charger.', 'error'); return; }
-  var filterId = state.profSeanceFilter;
-  var tirs = state.tirs.filter(function(t){ return !filterId || t.seanceId===filterId; });
+  var sea = activeSeance();
+  if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
+  var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
 
   var resultRows = [['Leçon','Date','Équipe','Élève','Série 1','Série 2']];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
-    var sea = seanceById(t.seanceId);
-    if (!stu || !sea) return;
+    if (!stu) return;
     resultRows.push([sea.label, sea.date||'', colorForTeam(t.teamId).label, stu.firstName,
       t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:'']);
   });
 
   var matchRows = [['Leçon','Ronde','Équipe A','Score A','Score B','Équipe B','Statut']];
-  state.matches.slice().sort(function(a,b){return (a.round||0)-(b.round||0) || (a.ts||0)-(b.ts||0);}).forEach(function(m){
-    var sea = seanceById(m.seanceId);
+  state.matches.filter(function(m){ return m.seanceId===sea.id; }).slice().sort(function(a,b){return (a.round||0)-(b.round||0) || (a.ts||0)-(b.ts||0);}).forEach(function(m){
     var played = m.scoreA != null;
-    matchRows.push([sea?sea.label:'', m.round||'', colorForTeam(m.teamAId).label,
+    matchRows.push([sea.label, m.round||'', colorForTeam(m.teamAId).label,
       played?m.scoreA:'', played?m.scoreB:'', colorForTeam(m.teamBId).label, played?'joué':'à jouer']);
   });
 
