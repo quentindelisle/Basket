@@ -233,6 +233,12 @@ tr.rank-1 td{background:var(--accent-soft);}
 .absent-row{opacity:.55;}
 .absent-row .chip.absent{background:var(--danger);}
 
+.appel-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;}
+.appel-grid .list-row{flex-wrap:wrap;}
+@media (max-width:640px){
+  .appel-grid{grid-template-columns:1fr;}
+}
+
 .toggle-btn{
   font-family:'Manrope';font-weight:700;font-size:12px;
   border:1px solid var(--border);background:var(--surface);color:var(--ink-dim);
@@ -279,7 +285,7 @@ function swatchStyle(c){
 
 // Numéro de version affiché en bas à gauche de l'écran, à incrémenter à
 // chaque nouvelle mise à jour de l'application.
-var APP_VERSION = 'v1.9';
+var APP_VERSION = 'v2.0';
 (function(){
   var el = document.getElementById('app-version');
   if (el) el.textContent = APP_VERSION;
@@ -300,6 +306,7 @@ var state = {
   absences: [],
   adminClassId: null,
   adminTab: 'equipes',
+  profUnlocked: false,
   student: {teamId:null, studentId:null},
   saisieSerie: null,
   saisieValue: 0,
@@ -647,6 +654,21 @@ function renderNoDb(){
   return '<div class="card empty">Cette page a besoin d\'être ouverte dans Claude pour fonctionner (stockage des scores indisponible ici).</div>';
 }
 
+// ---------- accès enseignant : code ----------
+function renderProfCode(){
+  return (
+    '<div class="stack center">' +
+      '<h2>Espace enseignant</h2>' +
+      '<p class="muted">Entre le code d\'accès pour continuer.</p>' +
+      '<div class="card slider-wrap">' +
+        '<input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="prof-code-input" placeholder="••••" style="font-size:32px;text-align:center;letter-spacing:.4em;width:100%;padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink);">' +
+      '</div>' +
+      '<button class="btn primary big" data-action="prof-code-submit">Valider</button>' +
+      '<button class="btn-nav" data-action="prof-code-cancel"><span class="nav-arrow back">&larr;</span>Annuler</button>' +
+    '</div>'
+  );
+}
+
 // ---------- ELEVE : menu (Précision / Tournoi) ----------
 function renderEleveHome(){
   var cls = activeClass();
@@ -904,6 +926,14 @@ function renderProfClasses(){
           '<input type="file" id="backup-file-input" accept="application/json" class="hidden" data-action="import-json-backup">' +
         '</div>' +
       '</div>' +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Code d\'accès enseignant</div>' +
+        '<p class="muted">Code demandé sur l\'écran d\'accueil pour entrer dans l\'espace enseignant (par défaut : 0000).</p>' +
+        '<div class="row">' +
+          '<div class="field"><label>Nouveau code (4 chiffres)</label><input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="new-prof-code" placeholder="0000"></div>' +
+          '<button class="btn primary" data-action="change-prof-code">Changer le code</button>' +
+        '</div>' +
+      '</div>' +
     '</div>'
   );
 }
@@ -980,7 +1010,12 @@ function renderProfSeances(){
   var appel = '';
   var activeSea = state.seances.find(function(s){ return s.id === state.config.activeSeanceId; });
   if (activeSea){
-    var rosterRows = state.students.slice().sort(function(a,b){ return a.firstName.localeCompare(b.firstName); }).map(function(s){
+    var rosterRows = state.students.slice().sort(function(a,b){
+      var ca = colorForTeam(a.teamId).label, cb = colorForTeam(b.teamId).label;
+      var cc = ca.localeCompare(cb);
+      if (cc) return cc;
+      return a.firstName.localeCompare(b.firstName);
+    }).map(function(s){
       var absent = isAbsent(activeSea.id, s.id);
       var c = colorForTeam(s.teamId);
       return '<div class="list-row'+(absent?' absent-row':'')+'"><div>' +
@@ -992,8 +1027,8 @@ function renderProfSeances(){
     }).join('') || '<div class="empty">Aucun élève dans cette classe.</div>';
     appel = '<div class="card stack">' +
       '<div class="eyebrow">Appel — '+esc(activeSea.label)+'</div>' +
-      '<p class="muted">Les élèves marqués absents n\'apparaissent pas dans la liste des prénoms pour la saisie des scores, pour cette leçon uniquement.</p>' +
-      rosterRows +
+      '<p class="muted">Les élèves marqués absents n\'apparaissent pas dans la liste des prénoms pour la saisie des scores, pour cette leçon uniquement. Triés par couleur puis par prénom.</p>' +
+      '<div class="appel-grid">'+rosterRows+'</div>' +
     '</div>';
   }
 
@@ -1011,8 +1046,8 @@ function renderProfSeances(){
           '<button class="btn primary" data-action="create-seance">Créer et activer</button>' +
         '</div>' +
       '</div>' +
-      appel +
       '<div class="card">'+rows+'</div>' +
+      appel +
     '</div>'
   );
 }
@@ -1508,6 +1543,7 @@ function render(){
   switch(state.view){
     case 'nodb': html = renderNoDb(); break;
     case 'home': html = renderHome(); break;
+    case 'prof-code': html = renderProfCode(); break;
     case 'eleve-home': html = renderEleveHome(); break;
     case 'eleve-equipe': html = renderEleveEquipe(); break;
     case 'eleve-prenom': html = renderElevePrenom(); break;
@@ -1525,6 +1561,13 @@ function render(){
 }
 
 function wireDynamic(){
+  var profCodeInput = document.getElementById('prof-code-input');
+  if (profCodeInput){
+    profCodeInput.focus();
+    profCodeInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') handleAction('prof-code-submit', profCodeInput);
+    });
+  }
   var slider = document.getElementById('score-slider');
   if (slider){
     slider.addEventListener('input', function(){
@@ -1579,9 +1622,34 @@ function handleAction(action, el){
       setView('eleve-equipe', {student:{teamId:null, studentId:null}});
       break;
     case 'go-prof':
-      if (!state.adminClassId && state.classes.length) state.adminClassId = state.config.activeClassId || state.classes[0].id;
-      ensureClassSubscribed(state.adminClassId);
-      setView('prof');
+      if (state.profUnlocked){
+        if (!state.adminClassId && state.classes.length) state.adminClassId = state.config.activeClassId || state.classes[0].id;
+        ensureClassSubscribed(state.adminClassId);
+        setView('prof');
+      } else {
+        setView('prof-code');
+      }
+      break;
+    case 'prof-code-submit':
+      var enteredCode = (document.getElementById('prof-code-input') || {}).value || '';
+      var expectedCode = state.config.profCode || '0000';
+      if (enteredCode === expectedCode){
+        state.profUnlocked = true;
+        if (!state.adminClassId && state.classes.length) state.adminClassId = state.config.activeClassId || state.classes[0].id;
+        ensureClassSubscribed(state.adminClassId);
+        setView('prof');
+      } else {
+        flash('Code incorrect.', 'error');
+        render();
+      }
+      break;
+    case 'prof-code-cancel': setView('home'); break;
+    case 'change-prof-code':
+      var newCode = (document.getElementById('new-prof-code') || {}).value || '';
+      if (!/^\d{4}$/.test(newCode)){ flash('Le code doit contenir exactement 4 chiffres.', 'error'); return; }
+      db.doc('app/config').set(Object.assign({}, state.config, {profCode: newCode})).then(function(){
+        flash('Code enseignant mis à jour.');
+      });
       break;
     case 'pick-team':
       state.student.teamId = el.getAttribute('data-id');

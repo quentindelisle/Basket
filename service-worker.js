@@ -1,6 +1,6 @@
 // TirScore — service worker : mise en cache de l'app pour un fonctionnement
 // hors-ligne une fois la page chargée une première fois.
-var CACHE = 'tirscore-v11';
+var CACHE = 'tirscore-v12';
 var ASSETS = [
   './',
   './index.html',
