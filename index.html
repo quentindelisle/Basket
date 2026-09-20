@@ -198,6 +198,12 @@ tr.rank-1 td{background:var(--accent-soft);}
   color:var(--ink-dim);opacity:.6;letter-spacing:.02em;
   pointer-events:none;z-index:5;
 }
+.app-version{
+  position:fixed;left:10px;bottom:8px;
+  font-family:'Manrope';font-size:11px;font-weight:600;
+  color:var(--ink-dim);opacity:.6;letter-spacing:.02em;
+  pointer-events:none;z-index:5;
+}
 
 /* ---- navigation : boutons plus visibles avec flèches colorées ---- */
 .btn-nav{
@@ -247,6 +253,7 @@ tr.rank-1 td{background:var(--accent-soft);}
   </div>
   <div id="screen"><div class="empty">Chargement…</div></div>
 </div>
+<div class="app-version" id="app-version"></div>
 <div class="app-signature">By Hugo Bredin &amp; Quentin Delisle</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -269,6 +276,14 @@ function swatchStyle(c){
   var border = c.border ? 'border:2px solid var(--ink-dim);' : '';
   return 'background:'+c.hex+';color:'+text+';'+border;
 }
+
+// Numéro de version affiché en bas à gauche de l'écran, à incrémenter à
+// chaque nouvelle mise à jour de l'application.
+var APP_VERSION = 'v1.8';
+(function(){
+  var el = document.getElementById('app-version');
+  if (el) el.textContent = APP_VERSION;
+})();
 
 var state = {
   db: null,
@@ -362,9 +377,26 @@ function flash(text, kind){
   setTimeout(function(){ state.msg=null; var b=document.getElementById('flash-msg'); if(b) b.remove(); }, 3200);
 }
 
+// Remet à zéro tout ce qui est calculé/filtré pour une classe précise
+// (classements déjà calculés, filtres, formulaires de match) : évite qu'un
+// classement ou un filtre d'une autre classe reste affiché après avoir
+// changé de classe en cours.
+function resetClassScopedUI(){
+  state.profSeanceFilter = null;
+  state.classementScope = 'all';
+  state.classementResult = null;
+  state.classementTirScope = 'all';
+  state.classementTirResult = null;
+  state.classementGeneralScope = 'all';
+  state.classementGeneralResult = null;
+  state.matchForm = {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
+  state.tournamentForm = {seanceId:null, courts: state.tournamentForm ? state.tournamentForm.courts : 1};
+  state.roundEntry = {};
+}
 function ensureClassSubscribed(classId){
   if (state.subscribedClassId === classId) return;
   state.subscribedClassId = classId;
+  resetClassScopedUI();
   if (!classId){
     watch('teams', null, function(l){ state.teams=l; render(); });
     watch('students', null, function(l){ state.students=l; render(); });
