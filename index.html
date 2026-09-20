@@ -844,18 +844,17 @@ function renderProf(){
 function renderProfClasses(){
   var rows = state.classes.map(function(c){
     var isActive = c.id === state.config.activeClassId;
-    var isEditing = c.id === state.adminClassId;
     return '<div class="list-row">' +
-      '<div><strong>'+esc(c.name)+'</strong>'+(isActive?' <span class="chip" style="background:var(--accent)">active pour les élèves</span>':'')+'</div>' +
+      '<div><strong>'+esc(c.name)+'</strong>'+(isActive?' <span class="chip" style="background:var(--accent)">classe en cours</span>':'')+'</div>' +
       '<div class="btn-row">' +
-        '<button class="btn'+(isEditing?' primary':'')+'" data-action="select-admin-class" data-id="'+c.id+'">Gérer</button>' +
-        (isActive ? '' : '<button class="btn" data-action="set-active-class" data-id="'+c.id+'">Activer pour les élèves</button>') +
+        (isActive ? '' : '<button class="btn primary" data-action="select-class" data-id="'+c.id+'">Utiliser cette classe</button>') +
         '<button class="iconbtn" data-action="delete-class" data-id="'+c.id+'" title="Supprimer">✕</button>' +
       '</div>' +
     '</div>';
   }).join('') || '<div class="empty">Aucune classe pour le moment.</div>';
   return (
     '<div class="stack">' +
+      '<div class="banner info">La classe « en cours » est unique pour toute l\'application : c\'est à la fois celle que tu gères (équipes, leçons, matchs) et celle que voient les élèves.</div>' +
       '<div class="card stack">' +
         '<div class="eyebrow">Nouvelle classe</div>' +
         '<div class="row">' +
@@ -1596,17 +1595,15 @@ function handleAction(action, el){
       break;
 
     case 'prof-tab': state.adminTab = el.getAttribute('data-tab'); state.classementResult=null; state.classementTirResult=null; state.classementGeneralResult=null; render(); break;
-    case 'select-admin-class':
-      state.adminClassId = el.getAttribute('data-id');
-      ensureClassSubscribed(state.adminClassId);
-      render();
+    case 'select-class':
+      var scId = el.getAttribute('data-id');
+      state.adminClassId = scId;
+      ensureClassSubscribed(scId);
+      db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: scId, activeSeanceId: null}));
+      flash('Classe en cours : cette classe est maintenant gérée et visible côté élèves.');
       break;
     case 'create-class': createClass(); break;
     case 'delete-class': deleteClass(el.getAttribute('data-id')); break;
-    case 'set-active-class':
-      db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: el.getAttribute('data-id'), activeSeanceId: null}));
-      flash('Classe activée pour les élèves.');
-      break;
 
     case 'add-team': addTeam(); break;
     case 'recolor-team': recolorTeam(el.getAttribute('data-id'), el.value); break;
@@ -1773,6 +1770,10 @@ function createClass(){
   state.db.collection('classes').add({name: name, createdAt: Date.now()}).then(function(ref){
     state.adminClassId = ref.id;
     ensureClassSubscribed(ref.id);
+    return state.db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: ref.id, activeSeanceId: null}));
+  }).then(function(){
+    input.value = '';
+    flash('Classe créée et sélectionnée comme classe en cours.');
     render();
   });
 }
