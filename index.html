@@ -147,6 +147,7 @@ h1,h2,h3,.display{
 
 .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;}
 .chip.outline{background:transparent;border:1px solid var(--border);color:var(--ink-dim);font-weight:600;}
+.chip.team-chip{font-family:'Oswald';font-size:22px;padding:12px 26px;text-transform:uppercase;letter-spacing:.03em;}
 
 .serie-card{border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface-2);}
 .serie-score{font-family:'Oswald';font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--good);}
@@ -285,7 +286,7 @@ function swatchStyle(c){
 
 // Numéro de version affiché en bas à gauche de l'écran, à incrémenter à
 // chaque nouvelle mise à jour de l'application.
-var APP_VERSION = 'v2.0';
+var APP_VERSION = 'v2.1';
 (function(){
   var el = document.getElementById('app-version');
   if (el) el.textContent = APP_VERSION;
@@ -321,7 +322,7 @@ var state = {
   matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null},
   tournamentForm: {seanceId:null, courts:1},
   roundEntry: {},
-  roundTimer: {duration:480, remaining:480, running:false, ended:false, forRound:null},
+  roundTimer: {duration:480, remaining:480, running:false, ended:false, halfBeeped:false, forRound:null},
   eleveMatchMsg: null
 };
 
@@ -816,25 +817,20 @@ function renderEleveMatchs(){
       '</div>'
     );
   }
-  var seaId = state.config.activeSeanceId;
   var locked = !state.roundTimer.ended;
 
   var matchesHtml = cur.matches.map(function(m){
     var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     var maxScore = Math.max(50, Math.round(entry.scoreA)||0, Math.round(entry.scoreB)||0);
-    var namesA = teamPlayersNames(m.teamAId, seaId);
-    var namesB = teamPlayersNames(m.teamBId, seaId);
-    var chipsA = namesA.length ? namesA.map(function(n){ return '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(n)+'</span>'; }).join(' ') : '<span class="muted">—</span>';
-    var chipsB = namesB.length ? namesB.map(function(n){ return '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(n)+'</span>'; }).join(' ') : '<span class="muted">—</span>';
     return '<div class="card stack">' +
       '<div class="row" style="align-items:center;justify-content:center">' +
         '<span class="court-badge">Terrain '+(m.slot||1)+'</span>' +
       '</div>' +
-      '<div class="row" style="align-items:flex-start">' +
-        '<div class="match-side" style="text-align:left">'+chipsA+'</div>' +
+      '<div class="row" style="align-items:center;justify-content:center">' +
+        '<span class="chip team-chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span>' +
         '<div class="match-vs">VS</div>' +
-        '<div class="match-side" style="text-align:right">'+chipsB+'</div>' +
+        '<span class="chip team-chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
       '</div>' +
       (locked ? '' : (
         '<div class="row">' +
@@ -1100,6 +1096,7 @@ function ensureTimerForRound(key){
     state.roundTimer.remaining = state.roundTimer.duration;
     state.roundTimer.running = false;
     state.roundTimer.ended = false;
+    state.roundTimer.halfBeeped = false;
     state.roundTimer.forRound = key;
   }
 }
@@ -1125,6 +1122,11 @@ function renderTimerCard(withControls, big){
           (rt.running ? '<button class="btn" style="flex:0 0 auto" data-action="timer-pause">Pause</button>' : '<button class="btn primary" style="flex:0 0 auto" data-action="timer-start">Début</button>') +
           '<button class="btn" style="flex:0 0 auto" data-action="timer-end">Fin</button>' +
           '<button class="btn" style="flex:0 0 auto" data-action="timer-reset">Réinitialiser</button>' +
+        '</div>' +
+        '<div class="row" style="justify-content:center">' +
+          [5,8,10,12,15].map(function(mn){
+            return '<button class="toggle-btn'+(minutes===mn?' active':'')+'" style="width:auto;margin-top:0" data-action="timer-duration-preset" data-minutes="'+mn+'">'+mn+' min</button>';
+          }).join('') +
         '</div>'
       ) : '') +
     '</div>'
@@ -1687,7 +1689,13 @@ function handleAction(action, el){
     case 'timer-duration':
       var mins = Math.max(1, parseInt(el.value, 10) || 8);
       state.roundTimer.duration = mins * 60;
-      if (!state.roundTimer.running) state.roundTimer.remaining = state.roundTimer.duration;
+      if (!state.roundTimer.running){ state.roundTimer.remaining = state.roundTimer.duration; state.roundTimer.halfBeeped = false; }
+      render();
+      break;
+    case 'timer-duration-preset':
+      var presetMins = parseInt(el.getAttribute('data-minutes'), 10) || 8;
+      state.roundTimer.duration = presetMins * 60;
+      if (!state.roundTimer.running){ state.roundTimer.remaining = state.roundTimer.duration; state.roundTimer.halfBeeped = false; }
       render();
       break;
 
@@ -1819,9 +1827,47 @@ function toggleAbsence(seanceId, studentId){
   }
 }
 
+// ---- bip sonore de mi-temps (remplacements) : Web Audio API, aucun fichier
+// audio nécessaire. audioCtx est créé/débloqué lors d'un geste utilisateur
+// (clic sur « Début ») car iOS/Safari refuse de jouer du son sinon.
+var audioCtx = null;
+function ensureAudioCtx(){
+  if (!audioCtx){
+    try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; }
+  }
+  if (audioCtx && audioCtx.state === 'suspended'){ audioCtx.resume().catch(function(){}); }
+  return audioCtx;
+}
+function playBeep(freq, startAt, dur){
+  var ctx = ensureAudioCtx();
+  if (!ctx) return;
+  try{
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq || 880;
+    gain.gain.value = 0.4;
+    osc.connect(gain); gain.connect(ctx.destination);
+    var t0 = ctx.currentTime + (startAt || 0);
+    osc.start(t0);
+    osc.stop(t0 + (dur || 0.35));
+  }catch(e){ console.error('beep', e); }
+}
+function playHalfTimeBeep(){
+  // deux bips courts, plus reconnaissable qu'un simple signal de fin.
+  playBeep(880, 0, 0.3);
+  playBeep(880, 0.4, 0.3);
+}
+
 function tickTimer(){
   if (!state.roundTimer.running) return;
   state.roundTimer.remaining = Math.max(0, state.roundTimer.remaining - 1);
+  var half = Math.floor(state.roundTimer.duration / 2);
+  if (half > 0 && state.roundTimer.remaining === half && !state.roundTimer.halfBeeped){
+    state.roundTimer.halfBeeped = true;
+    playHalfTimeBeep();
+    flash('🔔 Mi-temps — pensez aux remplacements !');
+  }
   var disp = document.getElementById('timer-display');
   if (disp && state.roundTimer.remaining > 0){
     disp.textContent = formatTimer(state.roundTimer.remaining);
@@ -1835,6 +1881,7 @@ function tickTimer(){
 }
 function startTimer(){
   if (state.roundTimer.running || state.roundTimer.ended) return;
+  ensureAudioCtx();
   if (state.roundTimer.remaining <= 0) state.roundTimer.remaining = state.roundTimer.duration;
   state.roundTimer.running = true;
   roundTimerHandle = setInterval(tickTimer, 1000);
@@ -1857,6 +1904,7 @@ function resetTimer(){
   if (roundTimerHandle){ clearInterval(roundTimerHandle); roundTimerHandle = null; }
   state.roundTimer.remaining = state.roundTimer.duration;
   state.roundTimer.ended = false;
+  state.roundTimer.halfBeeped = false;
   render();
 }
 
@@ -2039,8 +2087,14 @@ function generateSchedule(){
     var rounds = generateRoundRobinPairs(teamIds);
     var writes = [];
     rounds.forEach(function(pairs, ri){
-      pairs.forEach(function(pair, pi){
-        var slot = Math.floor(pi / courts) + 1;
+      // On fait tourner l'ordre des matchs de la ronde à chaque ronde, pour
+      // qu'un même terrain (ex. le terrain 3, moins apprécié) ne revienne
+      // pas toujours pour les mêmes équipes : le terrain est le numéro du
+      // match dans cet ordre tourné, modulo le nombre de terrains.
+      var offset = pairs.length ? (ri % pairs.length) : 0;
+      var rotated = pairs.slice(offset).concat(pairs.slice(0, offset));
+      rotated.forEach(function(pair, pi){
+        var slot = (pi % courts) + 1;
         writes.push(state.db.collection('classes/'+state.adminClassId+'/matches').add({
           seanceId: seanceId, teamAId: pair[0], teamBId: pair[1],
           scoreA: null, scoreB: null, scorersA3: false, scorersB3: false, round: ri+1, slot: slot, ts: Date.now()
