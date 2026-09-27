@@ -247,6 +247,30 @@ tr.rank-1 td{background:var(--accent-soft);}
 }
 .toggle-btn.active{background:var(--good);border-color:var(--good);color:#fff;}
 
+/* ---- v3 : séries configurables, résumé des leçons, terrains, super pouvoir ---- */
+.stepper{display:inline-flex;align-items:center;gap:8px;}
+.stepper .btn{min-width:48px;min-height:44px;font-size:20px;font-weight:800;padding:6px 12px;}
+.stepper .btn[disabled]{opacity:.4;cursor:default;}
+.stepper-val{font-family:'Oswald';font-size:22px;font-weight:700;min-width:64px;text-align:center;font-variant-numeric:tabular-nums;}
+.serie-edit{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);}
+.serie-edit .field{min-width:0;}
+.lesson-row{padding:10px 0;border-bottom:1px solid var(--border);}
+.lesson-row:last-child{border-bottom:none;}
+.lesson-plan{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-left:4px;}
+.lesson-plan-item{display:flex;align-items:center;gap:8px;font-size:14px;}
+.lesson-plan-item.power{color:var(--accent);font-weight:700;}
+.lesson-plan-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent-soft);color:var(--ink);font-size:12px;font-weight:800;flex:0 0 auto;}
+.court-badge.big{font-size:20px;padding:8px 20px;color:var(--ink);background:var(--accent-soft);border:2px solid var(--accent);}
+.power-counter{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:6px 8px;border-radius:12px;background:var(--accent-soft);}
+.power-counter .lbl{font-weight:700;font-size:13px;}
+.power-counter .btn{min-width:44px;min-height:40px;font-size:18px;font-weight:800;padding:4px 10px;}
+.power-counter .val{font-family:'Oswald';font-size:20px;font-weight:700;min-width:28px;text-align:center;}
+.court-grid td,.court-grid th{text-align:center;}
+.court-grid td:first-child,.court-grid th:first-child{text-align:left;}
+.rank-evo{font-size:12px;font-weight:800;}
+.rank-evo.up{color:var(--good);}
+.rank-evo.down{color:var(--danger);}
+
 </style>
 </head>
 <body>
@@ -286,7 +310,7 @@ function swatchStyle(c){
 
 // Numéro de version affiché en bas à gauche de l'écran, à incrémenter à
 // chaque nouvelle mise à jour de l'application.
-var APP_VERSION = 'v2.1';
+var APP_VERSION = 'v3.0';
 (function(){
   var el = document.getElementById('app-version');
   if (el) el.textContent = APP_VERSION;
@@ -320,7 +344,8 @@ var state = {
   classementGeneralScope: 'all',
   classementGeneralResult: null,
   matchForm: {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null},
-  tournamentForm: {seanceId:null, courts:1},
+  tournamentForm: {seanceId:null, courts:null},
+  seanceForm: null,
   roundEntry: {},
   roundTimer: {duration:480, remaining:480, running:false, ended:false, halfBeeped:false, forRound:null},
   eleveMatchMsg: null
@@ -374,6 +399,114 @@ function activeClass(){ return state.classes.find(function(c){return c.id===stat
 function studentsOfTeam(teamId){ return state.students.filter(function(s){return s.teamId===teamId;}); }
 function tirFor(seanceId, studentId){ return state.tirs.find(function(t){return t.seanceId===seanceId && t.studentId===studentId;}); }
 
+// ---- séries de tir configurables par leçon ----
+// Une leçon récente porte un tableau `series` : [{name, shots, value}]
+// (nom de l'exercice, nombre de tirs, points par tir réussi). Les anciennes
+// leçons (sans `series`) gardent leur fonctionnement d'origine : 2 séries,
+// curseur tirMin..tirMax, 1 point par unité.
+function seanceSeries(sea){
+  if (sea && Array.isArray(sea.series) && sea.series.length){
+    return sea.series.map(function(s, i){
+      return {
+        name: (s.name && String(s.name).trim()) || ('Série '+(i+1)),
+        shots: Math.max(1, parseInt(s.shots, 10) || 10),
+        value: Math.max(1, parseInt(s.value, 10) || 1),
+        min: 0
+      };
+    });
+  }
+  var max = sea && sea.tirMax != null ? Math.round(sea.tirMax) : 10;
+  var min = sea && sea.tirMin != null ? Math.round(sea.tirMin) : 0;
+  return [{name:'Série 1', shots:max, value:1, min:min, legacy:true}, {name:'Série 2', shots:max, value:1, min:min, legacy:true}];
+}
+function ptsLabel(v){ return v + ' pt' + (v > 1 ? 's' : ''); }
+function serieSummary(s){
+  return s.legacy ? (esc(s.name)+' · curseur '+s.min+' à '+s.shots)
+    : (esc(s.name)+' · '+s.shots+' tirs × '+ptsLabel(s.value)+' <span class="muted">(max '+(s.shots*s.value)+')</span>');
+}
+// Points d'une série (index n à partir de 1) pour un résultat de tir. Les
+// tirs réussis (madeN) sont stockés et les points recalculés avec la valeur
+// actuelle de la série : modifier la valeur d'une série après coup met à jour
+// les classements. Les anciens résultats (serieN seul) sont repris tels quels.
+function tirSeriePoints(tir, sea, n){
+  if (!tir) return null;
+  var series = seanceSeries(sea);
+  var s = series[n-1];
+  if (tir['made'+n] != null && s) return tir['made'+n] * s.value;
+  if (tir['serie'+n] != null) return tir['serie'+n];
+  return null;
+}
+function tirAllPoints(tir){
+  var sea = seanceById(tir.seanceId);
+  var count = Math.max(seanceSeries(sea).length, 2);
+  Object.keys(tir).forEach(function(k){ var m = /^(?:serie|made)(\d+)$/.exec(k); if (m) count = Math.max(count, parseInt(m[1],10)); });
+  var vals = [];
+  for (var n = 1; n <= count; n++){ var p = tirSeriePoints(tir, sea, n); if (p != null) vals.push(p); }
+  return vals;
+}
+
+// ---- terrains ----
+function courtName(slot){
+  var names = state.config.courtNames || [];
+  var n = names[(slot||1)-1];
+  return (n && String(n).trim()) || ('Terrain '+(slot||1));
+}
+
+// ---- super pouvoir (par leçon) ----
+function seancePower(sea){
+  if (!sea || !sea.powerName || !String(sea.powerName).trim()) return null;
+  return {name: String(sea.powerName).trim(), bonus: sea.powerBonus != null && !isNaN(sea.powerBonus) ? Number(sea.powerBonus) : 2};
+}
+
+// ---- leçons dans l'ordre chronologique (date, puis création) ----
+function seancesChrono(){
+  return state.seances.slice().sort(function(a, b){
+    var da = a.date || '', dbb = b.date || '';
+    if (da !== dbb) return da < dbb ? -1 : 1;
+    return (a.createdAt||0) - (b.createdAt||0);
+  });
+}
+// Portée d'un classement : 'all' (tout le cycle), 'upto:<id>' (cumul à
+// l'issue de cette leçon), 'only:<id>' (cette leçon seule). Renvoie la liste
+// des ids de leçons concernées, ou null pour « toutes ».
+function resolveScope(scope){
+  if (!scope || scope === 'all') return null;
+  var chrono = seancesChrono();
+  var parts = scope.split(':');
+  var kind = parts.length > 1 ? parts[0] : 'only';
+  var id = parts.length > 1 ? parts[1] : parts[0];
+  if (kind === 'upto'){
+    var idx = chrono.findIndex(function(s){ return s.id === id; });
+    if (idx === -1) return [];
+    return chrono.slice(0, idx+1).map(function(s){ return s.id; });
+  }
+  return [id];
+}
+// Portée « cumul à l'issue de la leçon précédente » (pour l'évolution du rang)
+function previousScopeIds(scope){
+  if (scope && scope.indexOf('only:') === 0) return null;
+  var ids = resolveScope(scope);
+  var chrono = seancesChrono().map(function(s){ return s.id; });
+  if (ids === null) ids = chrono.slice();
+  if (ids.length < 2) return null;
+  return ids.slice(0, ids.length - 1);
+}
+function scopeOptionsHtml(current, allLabel){
+  var chrono = seancesChrono();
+  var sel = function(v){ return current === v ? ' selected' : ''; };
+  var html = '<option value="all"'+sel('all')+'>'+esc(allLabel || 'Tout le cycle (toutes les leçons)')+'</option>';
+  if (chrono.length){
+    html += '<optgroup label="Cumul à l\'issue de la leçon…">' + chrono.map(function(s, i){
+      return '<option value="upto:'+s.id+'"'+sel('upto:'+s.id)+'>À l\'issue de la leçon '+(i+1)+' — '+esc(s.label)+'</option>';
+    }).join('') + '</optgroup>';
+    html += '<optgroup label="Une seule leçon">' + chrono.map(function(s, i){
+      return '<option value="only:'+s.id+'"'+(sel('only:'+s.id)||sel(s.id))+'>Leçon '+(i+1)+' seule — '+esc(s.label)+'</option>';
+    }).join('') + '</optgroup>';
+  }
+  return html;
+}
+function scopeIncludes(ids, seanceId){ return !ids || ids.indexOf(seanceId) !== -1; }
+
 function setView(v, extra){
   state.view = v;
   if (extra) Object.assign(state, extra);
@@ -397,8 +530,9 @@ function resetClassScopedUI(){
   state.classementTirResult = null;
   state.classementGeneralScope = 'all';
   state.classementGeneralResult = null;
-  state.matchForm = {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
-  state.tournamentForm = {seanceId:null, courts: state.tournamentForm ? state.tournamentForm.courts : 1};
+  state.matchForm = {seanceId:null, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0, editingId:null};
+  state.tournamentForm = {seanceId:null, courts: state.tournamentForm ? state.tournamentForm.courts : null};
+  state.seanceForm = null;
   state.roundEntry = {};
 }
 function ensureClassSubscribed(classId){
@@ -755,15 +889,19 @@ function renderEleveFiche(){
     return '<div class="card empty">Leçon ou élève introuvable.</div>';
   }
   var tir = tirFor(sea.id, stu.id);
-  function serieBlock(n){
-    var key = 'serie'+n;
-    var has = tir && tir[key] != null;
-    if (has){
-      return '<div class="serie-card"><div><strong>Série '+n+'</strong></div><div class="serie-score">'+fmtNum(tir[key], sea.tirStep)+'</div></div>';
+  var series = seanceSeries(sea);
+  function serieBlock(s, n){
+    var pts = tirSeriePoints(tir, sea, n);
+    var info = s.legacy ? '' : '<div class="serie-empty">'+s.shots+' tirs · '+ptsLabel(s.value)+' par tir réussi</div>';
+    if (pts != null){
+      var made = tir['made'+n];
+      var detail = (made != null && !s.legacy) ? '<div class="serie-empty">'+made+' / '+s.shots+' réussis</div>' : '';
+      return '<div class="serie-card"><div><strong>'+esc(s.name)+'</strong>'+info+'</div><div style="text-align:right"><div class="serie-score">'+fmtNum(pts)+(s.legacy?'':' <small style="font-size:14px">pts</small>')+'</div>'+detail+'</div></div>';
     }
-    return '<div class="serie-card"><div><strong>Série '+n+'</strong><div class="serie-empty">Pas encore saisie</div></div>'+
+    return '<div class="serie-card"><div><strong>'+esc(s.name)+'</strong>'+info+'<div class="serie-empty">Pas encore saisie</div></div>'+
       '<button class="btn primary" data-action="start-saisie" data-serie="'+n+'">Saisir</button></div>';
   }
+  var totalPts = tir ? tirAllPoints(tir).reduce(function(a,b){return a+b;},0) : 0;
   var teammates = studentsOfTeam(state.student.teamId).filter(function(s){
     return s.id !== stu.id && !isAbsent(sea.id, s.id);
   });
@@ -779,8 +917,8 @@ function renderEleveFiche(){
     '<div class="stack center">' +
       '<div class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</div>' +
       '<h2>'+esc(stu.firstName)+'</h2>' +
-      '<p class="muted">'+esc(sea.label)+' — deux séries de 10 tirs autorisées.</p>' +
-      serieBlock(1) + serieBlock(2) +
+      '<p class="muted">'+esc(sea.label)+' — '+series.length+' série'+(series.length>1?'s':'')+' de tirs'+(tir ? ' · total : <strong>'+fmtNum(totalPts)+' pts</strong>' : '')+'</p>' +
+      series.map(function(s, i){ return serieBlock(s, i+1); }).join('') +
       teammatesHtml +
       '<button class="btn-nav" data-action="go-eleve-precision"><span class="nav-arrow back">&larr;</span>Changer d\'équipe</button>' +
     '</div>'
@@ -791,15 +929,18 @@ function renderEleveFiche(){
 function renderEleveSaisie(){
   var sea = activeSeance();
   var stu = studentById(state.student.studentId);
-  var min = sea.tirMin != null ? Math.round(sea.tirMin) : 0;
-  var max = sea.tirMax != null ? Math.round(sea.tirMax) : 10;
+  var s = seanceSeries(sea)[state.saisieSerie-1] || seanceSeries(sea)[0];
+  var min = s.min, max = s.shots;
+  var v = Math.round(state.saisieValue);
   return (
     '<div class="stack center">' +
       '<button class="btn-nav" data-action="cancel-saisie"><span class="nav-arrow back">&larr;</span>Annuler</button>' +
-      '<h2>'+esc(stu.firstName)+' — Série '+state.saisieSerie+'</h2>' +
+      '<h2>'+esc(stu.firstName)+' — '+esc(s.name)+'</h2>' +
+      (s.legacy ? '' : '<p class="muted">Combien de tirs as-tu réussis sur '+s.shots+' ? Chaque tir réussi vaut '+ptsLabel(s.value)+'.</p>') +
       '<div class="card slider-wrap">' +
-        '<div class="slider-value" id="slider-display">'+fmtNum(state.saisieValue)+'</div>' +
-        '<input type="range" id="score-slider" min="'+min+'" max="'+max+'" step="1" value="'+Math.round(state.saisieValue)+'">' +
+        '<div class="slider-value" id="slider-display">'+fmtNum(v)+(s.legacy?'':' <small style="font-size:.4em">/ '+s.shots+'</small>')+'</div>' +
+        (s.legacy ? '' : '<div class="serie-score" id="slider-points" style="margin:-8px 0 14px">= '+fmtNum(v*s.value)+' pts</div>') +
+        '<input type="range" id="score-slider" min="'+min+'" max="'+max+'" step="1" value="'+v+'" data-shots="'+(s.legacy?'':s.shots)+'" data-value="'+s.value+'">' +
         '<div class="slider-scale"><span>'+fmtNum(min)+'</span><span>'+fmtNum(max)+'</span></div>' +
       '</div>' +
       '<button class="btn primary big" data-action="valider-saisie">Valider ma série</button>' +
@@ -818,14 +959,15 @@ function renderEleveMatchs(){
     );
   }
   var locked = !state.roundTimer.ended;
+  var power = seancePower(activeSeance());
 
   var matchesHtml = cur.matches.map(function(m){
-    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0};
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     var maxScore = Math.max(50, Math.round(entry.scoreA)||0, Math.round(entry.scoreB)||0);
     return '<div class="card stack">' +
       '<div class="row" style="align-items:center;justify-content:center">' +
-        '<span class="court-badge">Terrain '+(m.slot||1)+'</span>' +
+        '<span class="court-badge big">'+esc(courtName(m.slot))+'</span>' +
       '</div>' +
       '<div class="row" style="align-items:center;justify-content:center">' +
         '<span class="chip team-chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span>' +
@@ -838,11 +980,13 @@ function renderEleveMatchs(){
             '<label>Score '+esc(ca.label)+' — <span id="rd-scoreA-disp-'+m.id+'">'+Math.round(entry.scoreA)+'</span></label>' +
             '<input type="range" class="rd-score" data-side="A" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreA)+'">' +
             '<button class="toggle-btn'+(entry.scorersA?' active':'')+'" data-action="toggle-scorers3" data-side="A" data-id="'+m.id+'">'+(entry.scorersA?'✓ ':'')+'3 marqueurs différents ('+esc(ca.label)+')</button>' +
+            powerCounterHtml(power, entry.powerA||0, 'round-power', 'A', m.id, ca.label) +
           '</div>' +
           '<div class="field slider-field">' +
             '<label>Score '+esc(cb.label)+' — <span id="rd-scoreB-disp-'+m.id+'">'+Math.round(entry.scoreB)+'</span></label>' +
             '<input type="range" class="rd-score" data-side="B" data-id="'+m.id+'" min="0" max="'+maxScore+'" step="1" value="'+Math.round(entry.scoreB)+'">' +
             '<button class="toggle-btn'+(entry.scorersB?' active':'')+'" data-action="toggle-scorers3" data-side="B" data-id="'+m.id+'">'+(entry.scorersB?'✓ ':'')+'3 marqueurs différents ('+esc(cb.label)+')</button>' +
+            powerCounterHtml(power, entry.powerB||0, 'round-power', 'B', m.id, cb.label) +
           '</div>' +
         '</div>'
       )) +
@@ -852,6 +996,7 @@ function renderEleveMatchs(){
   return (
     '<div class="stack stage">' +
       '<h2>Ronde '+cur.round+'</h2>' +
+      (power ? '<div class="banner info">⚡ Super pouvoir de la leçon : <strong>'+esc(power.name)+'</strong> — +'+ptsLabel(power.bonus)+' au classement à chaque utilisation.</div>' : '') +
       renderTimerCard(true, true) +
       matchesHtml +
       (locked ?
@@ -982,25 +1127,96 @@ function renderProfEquipes(){
   );
 }
 
-function lastSeanceDefaults(){
-  if (!state.seances.length) return {tirMin:0, tirMax:10, tirStep:1};
-  var s = state.seances.slice().sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); })[0];
-  return {tirMin:s.tirMin!=null?Math.round(s.tirMin):0, tirMax:s.tirMax!=null?Math.round(s.tirMax):10, tirStep:1};
+// Formulaire « nouvelle leçon » : pré-rempli avec les séries et le super
+// pouvoir de la dernière leçon créée (on garde souvent le même dispositif).
+function newSeanceForm(){
+  var today = new Date().toISOString().slice(0,10);
+  var last = state.seances.slice().sort(function(a,b){ return (b.createdAt||0)-(a.createdAt||0); })[0];
+  var series = last ? seanceSeries(last).map(function(s){ return {name: s.legacy ? s.name : s.name, shots: s.shots, value: s.value}; })
+    : [{name:'Série 1', shots:10, value:1}, {name:'Série 2', shots:10, value:1}];
+  return {
+    editingId: null, label: '', date: today, series: series,
+    powerName: last && last.powerName ? last.powerName : '',
+    powerBonus: last && last.powerBonus != null ? last.powerBonus : 2
+  };
+}
+function seanceFormFrom(sea){
+  return {
+    editingId: sea.id, label: sea.label || '', date: sea.date || '',
+    series: seanceSeries(sea).map(function(s){ return {name:s.name, shots:s.shots, value:s.value}; }),
+    powerName: sea.powerName || '', powerBonus: sea.powerBonus != null ? sea.powerBonus : 2
+  };
+}
+function seanceSummaryHtml(s){
+  var series = seanceSeries(s);
+  var total = series.reduce(function(a, x){ return a + (x.legacy ? 0 : x.shots * x.value); }, 0);
+  var p = seancePower(s);
+  return '<div class="lesson-plan">' +
+    series.map(function(x, i){ return '<div class="lesson-plan-item"><span class="lesson-plan-num">'+(i+1)+'</span>'+serieSummary(x)+'</div>'; }).join('') +
+    (total ? '<div class="muted" style="font-size:12px">Total possible en précision : '+total+' pts par élève</div>' : '') +
+    (p ? '<div class="lesson-plan-item power"><span class="lesson-plan-num">⚡</span>Super pouvoir « '+esc(p.name)+' » · +'+ptsLabel(p.bonus)+' par utilisation</div>' : '') +
+  '</div>';
+}
+function renderSeanceForm(){
+  var f = state.seanceForm;
+  var editing = !!f.editingId;
+  var valueOpts = function(sel){
+    return [1,2,3,4,5].map(function(v){ return '<option value="'+v+'"'+(v===sel?' selected':'')+'>'+ptsLabel(v)+'</option>'; }).join('');
+  };
+  var seriesRows = f.series.map(function(s, i){
+    return '<div class="serie-edit">' +
+      '<span class="lesson-plan-num">'+(i+1)+'</span>' +
+      '<div class="field" style="flex:2;min-width:160px"><label>Nom de l\'exercice</label><input data-sf="series.'+i+'.name" value="'+esc(s.name)+'" placeholder="ex. Lancer franc"></div>' +
+      '<div class="field" style="flex:0 0 96px"><label>Nb de tirs</label><input type="number" min="1" step="1" data-sf="series.'+i+'.shots" value="'+s.shots+'"></div>' +
+      '<div class="field" style="flex:0 0 110px"><label>Valeur / tir</label><select data-sf="series.'+i+'.value">'+valueOpts(s.value)+'</select></div>' +
+      (f.series.length > 1 ? '<button class="iconbtn" data-action="seance-series-remove" data-idx="'+i+'" title="Retirer cette série">✕</button>' : '') +
+    '</div>';
+  }).join('');
+  return '<div class="card stack">' +
+    '<div class="eyebrow">'+(editing ? 'Modifier la leçon' : 'Nouvelle leçon')+'</div>' +
+    '<div class="row">' +
+      '<div class="field"><label>Intitulé</label><input data-sf="label" value="'+esc(f.label)+'" placeholder="ex. Leçon du '+esc(f.date||'')+'"></div>' +
+      '<div class="field"><label>Date</label><input type="date" data-sf="date" value="'+esc(f.date)+'"></div>' +
+    '</div>' +
+    '<div class="row" style="align-items:center">' +
+      '<div class="field" style="flex:0 0 auto"><label>Nombre de séries de tirs</label>' +
+        '<div class="stepper"><button class="btn" data-action="seance-series-remove" data-idx="'+(f.series.length-1)+'"'+(f.series.length<=1?' disabled':'')+'>−</button>' +
+        '<span class="stepper-val">'+f.series.length+'</span>' +
+        '<button class="btn" data-action="seance-series-add"'+(f.series.length>=10?' disabled':'')+'>+</button></div>' +
+      '</div>' +
+    '</div>' +
+    seriesRows +
+    '<div class="row">' +
+      '<div class="field" style="flex:2"><label>⚡ Super pouvoir du tournoi (thème, facultatif)</label><input data-sf="powerName" value="'+esc(f.powerName)+'" placeholder="ex. Passe dans le dos, panier en course…"></div>' +
+      '<div class="field" style="flex:0 0 150px"><label>Bonus par utilisation</label><input type="number" min="1" step="1" data-sf="powerBonus" value="'+esc(f.powerBonus)+'"></div>' +
+    '</div>' +
+    (editing && state.tirs.some(function(t){ return t.seanceId===f.editingId; }) ?
+      '<p class="muted">Des tirs sont déjà saisis pour cette leçon : changer la valeur d\'une série recalcule leurs points. Retirer une série ne supprime pas les résultats déjà saisis, mais ils ne seront plus comptés.</p>' : '') +
+    '<div class="btn-row">' +
+      '<button class="btn primary" data-action="create-seance">'+(editing ? 'Enregistrer les modifications' : 'Créer et activer')+'</button>' +
+      (editing ? '<button class="btn ghost" data-action="cancel-edit-seance">Annuler</button>' : '') +
+    '</div>' +
+  '</div>';
 }
 
 function renderProfSeances(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var d = lastSeanceDefaults();
-  var today = new Date().toISOString().slice(0,10);
+  if (!state.seanceForm) state.seanceForm = newSeanceForm();
+  var chronoIdx = {};
+  seancesChrono().forEach(function(s, i){ chronoIdx[s.id] = i+1; });
   var rows = state.seances.slice().sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);}).map(function(s){
     var isActive = s.id === state.config.activeSeanceId;
-    return '<div class="list-row"><div>' +
-      '<strong>'+esc(s.label)+'</strong> <span class="muted">('+esc(s.date||'')+') — curseur '+fmtNum(s.tirMin)+' à '+fmtNum(s.tirMax)+'</span>' +
+    return '<div class="lesson-row">' +
+      '<div class="list-row" style="border-bottom:none;padding-bottom:0"><div>' +
+      '<span class="muted">Leçon '+chronoIdx[s.id]+' · </span><strong>'+esc(s.label)+'</strong> <span class="muted">('+esc(s.date||'')+')</span>' +
       (isActive ? ' <span class="chip" style="background:var(--accent)">active</span>' : '') +
       '</div><div class="btn-row">' +
       (isActive ? '' : '<button class="btn" data-action="set-active-seance" data-id="'+s.id+'">Activer</button>') +
+      '<button class="btn" data-action="edit-seance" data-id="'+s.id+'">Modifier</button>' +
       '<button class="iconbtn" data-action="delete-seance" data-id="'+s.id+'">✕</button>' +
-      '</div></div>';
+      '</div></div>' +
+      seanceSummaryHtml(s) +
+      '</div>';
   }).join('') || '<div class="empty">Aucune leçon créée.</div>';
 
   var appel = '';
@@ -1030,19 +1246,8 @@ function renderProfSeances(){
 
   return (
     '<div class="stack">' +
-      '<div class="card stack">' +
-        '<div class="eyebrow">Nouvelle leçon</div>' +
-        '<div class="row">' +
-          '<div class="field"><label>Intitulé</label><input id="new-seance-label" placeholder="ex. Leçon du '+today+'"></div>' +
-          '<div class="field"><label>Date</label><input type="date" id="new-seance-date" value="'+today+'"></div>' +
-        '</div>' +
-        '<div class="row">' +
-          '<div class="field"><label>Curseur min</label><input type="number" step="1" id="new-seance-min" value="'+d.tirMin+'"></div>' +
-          '<div class="field"><label>Curseur max</label><input type="number" step="1" id="new-seance-max" value="'+d.tirMax+'"></div>' +
-          '<button class="btn primary" data-action="create-seance">Créer et activer</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="card">'+rows+'</div>' +
+      renderSeanceForm() +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:6px">Leçons du cycle</div>'+rows+'</div>' +
       appel +
     '</div>'
   );
@@ -1055,16 +1260,25 @@ function renderProfResultats(){
     return '<div class="card empty">Aucune leçon en cours. Activez une leçon dans l\'onglet « Leçons » pour voir et saisir ses résultats.<br><br><span class="muted">Pour consulter les résultats d\'une leçon plus ancienne, utilisez le classement (onglets « Classement précision » et « Classement général »), qui couvre toutes les leçons passées.</span></div>';
   }
   var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
+  var series = seanceSeries(sea);
   var rows = tirs.map(function(t){
     var stu = studentById(t.studentId);
     var c = colorForTeam(t.teamId);
     if (!stu) return '';
+    var total = 0;
+    var cells = series.map(function(s, i){
+      var p = tirSeriePoints(t, sea, i+1);
+      if (p == null) return '<td>—</td>';
+      total += p;
+      var made = t['made'+(i+1)];
+      return '<td>'+(made != null && !s.legacy && s.value > 1 ? made+' <span class="muted">→ '+fmtNum(p)+'</span>' : fmtNum(p))+'</td>';
+    }).join('');
     return '<tr><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
-      '<td>'+esc(stu.firstName)+'</td>' +
-      '<td>'+(t.serie1!=null?fmtNum(t.serie1,sea.tirStep):'—')+'</td>' +
-      '<td>'+(t.serie2!=null?fmtNum(t.serie2,sea.tirStep):'—')+'</td>' +
+      '<td>'+esc(stu.firstName)+'</td>' + cells +
+      '<td><strong>'+fmtNum(total)+'</strong></td>' +
       '<td><button class="iconbtn" data-action="delete-tir" data-id="'+t.id+'">✕</button></td></tr>';
-  }).join('') || '<tr><td colspan="5" class="empty">Aucun résultat pour le moment.</td></tr>';
+  }).join('') || '<tr><td colspan="'+(series.length+4)+'" class="empty">Aucun résultat pour le moment.</td></tr>';
+  var heads = series.map(function(s){ return '<th>'+esc(s.name)+(s.legacy?'':'<br><span style="text-transform:none;letter-spacing:0">'+s.shots+' × '+ptsLabel(s.value)+'</span>')+'</th>'; }).join('');
   return (
     '<div class="stack">' +
       '<div class="banner info">Leçon en cours : <strong>'+esc(sea.label)+'</strong>. Pour consulter les résultats d\'une leçon plus ancienne, passez par le classement (couvre tout le cycle) — activez une autre leçon dans l\'onglet « Leçons » si vous voulez la corriger.</div>' +
@@ -1072,7 +1286,7 @@ function renderProfResultats(){
         '<button class="btn" data-action="export-csv">Exporter en CSV</button>' +
         '<button class="btn" data-action="export-xlsx">Exporter en Excel (.xlsx)</button>' +
       '</div>' +
-      '<div class="card table-wrap"><table><thead><tr><th>Équipe</th><th>Élève</th><th>Série 1</th><th>Série 2</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Équipe</th><th>Élève</th>'+heads+'<th>Total pts</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
     '</div>'
   );
 }
@@ -1110,15 +1324,24 @@ function formatTimer(sec){
 }
 function renderTimerCard(withControls, big){
   var rt = state.roundTimer;
-  var minutes = Math.round(rt.duration/60);
+  var minutes = rt.duration / 60;
+  var minLabel = (minutes % 1 === 0 ? minutes : fmtNum(minutes)) + ' min';
   return (
     '<div class="card timer-wrap stack">' +
       '<div class="eyebrow">Chrono de ronde</div>' +
       '<div class="timer-display'+(big?'':' small')+(rt.ended?' done':'')+'" id="timer-display">'+formatTimer(rt.remaining)+'</div>' +
       (rt.ended ? '<div class="banner warn">⏰ Temps écoulé — vous pouvez saisir les scores.</div>' : '') +
       (withControls ? (
-        '<div class="row" style="justify-content:center;align-items:flex-end">' +
-          '<div class="field" style="max-width:120px;flex:0 0 auto"><label>Durée (min)</label><input type="number" min="1" step="1" id="timer-duration" value="'+minutes+'" data-action="timer-duration"></div>' +
+        '<div class="row" style="justify-content:center;align-items:center">' +
+          '<div class="field" style="flex:0 0 auto;align-items:center"><label>Durée du match</label>' +
+            '<div class="stepper">' +
+              '<button class="btn" data-action="timer-adjust" data-delta="-60" title="Retirer 1 minute"'+(rt.duration<=60?' disabled':'')+'>−</button>' +
+              '<span class="stepper-val">'+minLabel+'</span>' +
+              '<button class="btn" data-action="timer-adjust" data-delta="60" title="Ajouter 1 minute">+</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="row" style="justify-content:center">' +
           (rt.running ? '<button class="btn" style="flex:0 0 auto" data-action="timer-pause">Pause</button>' : '<button class="btn primary" style="flex:0 0 auto" data-action="timer-start">Début</button>') +
           '<button class="btn" style="flex:0 0 auto" data-action="timer-end">Fin</button>' +
           '<button class="btn" style="flex:0 0 auto" data-action="timer-reset">Réinitialiser</button>' +
@@ -1127,7 +1350,8 @@ function renderTimerCard(withControls, big){
           [5,8,10,12,15].map(function(mn){
             return '<button class="toggle-btn'+(minutes===mn?' active':'')+'" style="width:auto;margin-top:0" data-action="timer-duration-preset" data-minutes="'+mn+'">'+mn+' min</button>';
           }).join('') +
-        '</div>'
+        '</div>' +
+        (rt.running ? '<p class="muted" style="text-align:center">Pendant le match, + / − ajoute ou retire une minute au temps restant.</p>' : '')
       ) : '') +
     '</div>'
   );
@@ -1137,7 +1361,7 @@ function renderRoundMatchesReadonly(cur){
   var rows = cur.matches.map(function(m){
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
     return '<div class="list-row"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-      '<span class="court-badge">Terrain '+(m.slot||1)+'</span>' +
+      '<span class="court-badge big">'+esc(courtName(m.slot))+'</span>' +
       '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span>' +
       '<span class="muted">vs</span>' +
       '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
@@ -1145,7 +1369,31 @@ function renderRoundMatchesReadonly(cur){
       '<button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button>' +
       '</div>';
   }).join('');
+  var waiting = state.teams.filter(function(t){
+    return !cur.matches.some(function(m){ return m.teamAId===t.id || m.teamBId===t.id; });
+  });
+  if (waiting.length){
+    rows += '<div class="muted" style="margin-top:6px">En attente cette ronde : ' + waiting.map(function(t){
+      var c = colorForTeam(t); return '<span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span>';
+    }).join(' ') + '</div>';
+  }
   return rows;
+}
+// Compteur « super pouvoir » (− n +) pour un côté d'un match
+function powerCounterHtml(power, count, action, side, id, teamLabel){
+  if (!power) return '';
+  return '<div class="power-counter">' +
+    '<span class="lbl">⚡ '+esc(power.name)+(teamLabel ? ' ('+esc(teamLabel)+')' : '')+'</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:6px">' +
+      '<button class="btn" data-action="'+action+'" data-side="'+side+'" data-delta="-1"'+(id?' data-id="'+id+'"':'')+(count<=0?' disabled':'')+'>−</button>' +
+      '<span class="val">'+count+'</span>' +
+      '<button class="btn" data-action="'+action+'" data-side="'+side+'" data-delta="1"'+(id?' data-id="'+id+'"':'')+'>+</button>' +
+    '</span>' +
+  '</div>';
+}
+function currentCourts(){
+  var n = parseInt(state.config.courtCount, 10);
+  return n > 0 ? n : 1;
 }
 
 function renderProfMatchs(){
@@ -1153,11 +1401,12 @@ function renderProfMatchs(){
   if (!state.seances.length) return '<div class="card empty">Créez d\'abord une leçon.</div>';
   if (state.teams.length < 2) return '<div class="card empty">Il faut au moins deux équipes pour saisir un match.</div>';
   var f = state.matchForm;
-  var tf = state.tournamentForm;
   var sea = activeSeance();
   if (!sea){
     return '<div class="card empty">Aucune leçon en cours. Activez une leçon dans l\'onglet « Leçons » pour programmer ou consulter son tournoi.<br><br><span class="muted">Pour consulter le classement des leçons passées, utilisez l\'onglet « Classement matchs » ou « Classement général ».</span></div>';
   }
+  var power = seancePower(sea);
+  var courts = currentCourts();
 
   var played = state.matches.filter(function(m){ return m.seanceId===sea.id && m.scoreA != null; })
     .sort(function(a,b){return (b.ts||0)-(a.ts||0);});
@@ -1166,9 +1415,13 @@ function renderProfMatchs(){
 
   var resultats = played.map(function(m){
     var ca = colorForTeam(m.teamAId), cb = colorForTeam(m.teamBId);
+    var extras = function(three, pw){
+      return (three ? ' <span title="3 marqueurs différents">✓3</span>' : '') + (pw ? ' <span title="Super pouvoir">⚡×'+pw+'</span>' : '');
+    };
     return '<div class="list-row"><div>' +
-      '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span> ' + m.scoreA + ' – ' + m.scoreB + ' ' +
-      '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
+      '<span class="court-badge">R'+(m.round||'?')+' · '+esc(courtName(m.slot))+'</span> ' +
+      '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span>'+extras(m.scorersA3, m.powerA)+' ' + m.scoreA + ' – ' + m.scoreB + ' ' +
+      '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>'+extras(m.scorersB3, m.powerB) +
       '</div><div class="btn-row">' +
       '<button class="btn" data-action="edit-match" data-id="'+m.id+'">Modifier</button>' +
       '<button class="iconbtn" data-action="delete-match" data-id="'+m.id+'">✕</button>' +
@@ -1179,25 +1432,29 @@ function renderProfMatchs(){
   var correction = '';
   if (editing){
     var ca = colorForTeam(editing.teamAId), cb = colorForTeam(editing.teamBId);
+    var editPower = seancePower(seanceById(editing.seanceId));
     var scoreAmax = Math.max(50, Math.round(f.scoreA)||0, Math.round(f.scoreB)||0);
     correction = (
       '<div class="card stack">' +
         '<div class="eyebrow">Corriger le score</div>' +
         '<div class="row" style="align-items:center">' +
+          '<span class="court-badge">'+esc(courtName(editing.slot))+'</span>' +
           '<span class="chip" style="'+swatchStyle(ca)+'">'+esc(ca.label)+'</span>' +
           '<span class="muted">vs</span>' +
           '<span class="chip" style="'+swatchStyle(cb)+'">'+esc(cb.label)+'</span>' +
         '</div>' +
         '<div class="row">' +
           '<div class="field slider-field">' +
-            '<label>Score A — <span id="match-scoreA-display">'+Math.round(f.scoreA)+'</span></label>' +
+            '<label>Score '+esc(ca.label)+' — <span id="match-scoreA-display">'+Math.round(f.scoreA)+'</span></label>' +
             '<input type="range" id="match-scoreA" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreA)+'">' +
             '<button class="toggle-btn'+(f.scorersA?' active':'')+'" data-action="match-scorers-toggle" data-side="A">'+(f.scorersA?'✓ ':'')+'3 marqueurs différents ('+esc(ca.label)+')</button>' +
+            powerCounterHtml(editPower, f.powerA||0, 'match-power', 'A', null, ca.label) +
           '</div>' +
           '<div class="field slider-field">' +
-            '<label>Score B — <span id="match-scoreB-display">'+Math.round(f.scoreB)+'</span></label>' +
+            '<label>Score '+esc(cb.label)+' — <span id="match-scoreB-display">'+Math.round(f.scoreB)+'</span></label>' +
             '<input type="range" id="match-scoreB" min="0" max="'+scoreAmax+'" step="1" value="'+Math.round(f.scoreB)+'">' +
             '<button class="toggle-btn'+(f.scorersB?' active':'')+'" data-action="match-scorers-toggle" data-side="B">'+(f.scorersB?'✓ ':'')+'3 marqueurs différents ('+esc(cb.label)+')</button>' +
+            powerCounterHtml(editPower, f.powerB||0, 'match-power', 'B', null, cb.label) +
           '</div>' +
         '</div>' +
         '<div class="btn-row">' +
@@ -1220,19 +1477,55 @@ function renderProfMatchs(){
       '<select data-action="recolor-team" data-id="'+t.id+'">'+colorOptions+'</select></div>';
   }).join('');
 
+  var courtInputs = '';
+  for (var ci = 0; ci < courts; ci++){
+    var stored = (state.config.courtNames || [])[ci] || '';
+    courtInputs += '<div class="field" style="min-width:140px"><label>Terrain '+(ci+1)+'</label>' +
+      '<input data-action="court-name" data-idx="'+ci+'" value="'+esc(stored)+'" placeholder="Terrain '+(ci+1)+'"></div>';
+  }
+
+  // Tableau de répartition des terrains pour la leçon
+  var fairness = '';
+  var seaMatches = state.matches.filter(function(m){ return m.seanceId===sea.id; });
+  if (seaMatches.length){
+    var maxSlot = seaMatches.reduce(function(mx, m){ return Math.max(mx, m.slot||1); }, 1);
+    var usage = courtUsage(sea.id, maxSlot);
+    var head = '<th>Équipe</th>'; for (var hs = 1; hs <= maxSlot; hs++) head += '<th>'+esc(courtName(hs))+'</th>';
+    var body = state.teams.map(function(t){
+      var c = colorForTeam(t);
+      return '<tr><td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
+        (usage[t.id]||[]).map(function(v){ return '<td>'+v+'</td>'; }).join('') + '</tr>';
+    }).join('');
+    fairness = '<div class="card table-wrap stack"><div class="eyebrow">Répartition des terrains — '+esc(sea.label)+'</div>' +
+      '<p class="muted">Nombre de matchs de chaque équipe sur chaque terrain (programme complet de la leçon).</p>' +
+      '<table class="court-grid"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+
   return (
     '<div class="stack">' +
       '<div class="card stack">' +
-        '<div class="eyebrow">Couleurs des chasubles</div>' +
-        '<p class="muted">Changez la couleur d\'une équipe à tout moment, même en plein tournoi : ses matchs et son historique restent attachés à l\'équipe.</p>' +
-        teamChips +
+        '<div class="eyebrow">Programmer un tournoi — '+esc(sea.label)+' (leçon en cours)</div>' +
+        '<p class="muted">Chaque équipe rencontre toutes les autres une fois. S\'il y a plus de matchs que de terrains, la ronde est découpée et certaines équipes attendent. Les terrains sont répartis pour que chaque équipe passe autant de fois sur chaque terrain (à un match près).</p>' +
+        '<div class="row" style="align-items:center">' +
+          '<div class="field" style="flex:0 0 auto"><label>Terrains disponibles</label>' +
+            '<div class="stepper">' +
+              '<button class="btn" data-action="courts-adjust" data-delta="-1"'+(courts<=1?' disabled':'')+'>−</button>' +
+              '<span class="stepper-val">'+courts+'</span>' +
+              '<button class="btn" data-action="courts-adjust" data-delta="1"'+(courts>=8?' disabled':'')+'>+</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="row">'+courtInputs+'</div>' +
+        '<p class="muted" style="font-size:12px">Nom des terrains : enregistré automatiquement, gardé pour toutes les classes (ex. « Terrain fond », « Côté fenêtres »).</p>' +
+        '<button class="btn primary" data-action="generate-schedule">Générer le programme</button>' +
       '</div>' +
       '<div class="card stack">' +
-        '<div class="eyebrow">Programmer un tournoi — '+esc(sea.label)+' (leçon en cours)</div>' +
-        '<p class="muted">Génère automatiquement les rencontres pour que toutes les équipes s\'affrontent une fois, réparties en rondes (à chaque ronde, toutes les équipes jouent en même temps). Le tournoi est toujours programmé pour la leçon en cours ; activez une autre leçon dans l\'onglet « Leçons » pour en programmer une autre.</p>' +
+        '<div class="eyebrow">⚡ Super pouvoir — '+esc(sea.label)+'</div>' +
+        '<p class="muted">Thème de la leçon : chaque utilisation réussie rapporte des points bonus dans le classement général (en plus du bonus « 3 marqueurs différents »). Laissez le thème vide pour ne pas l\'utiliser.</p>' +
         '<div class="row">' +
-          '<div class="field"><label>Terrains disponibles en même temps</label><input type="number" min="1" step="1" id="tournament-courts" value="'+tf.courts+'"></div>' +
-          '<button class="btn primary" data-action="generate-schedule">Générer le programme</button>' +
+          '<div class="field" style="flex:2"><label>Thème du super pouvoir</label><input id="power-name" value="'+esc(sea.powerName||'')+'" placeholder="ex. Passe dans le dos"></div>' +
+          '<div class="field" style="flex:0 0 150px"><label>Points par utilisation</label><input type="number" min="1" step="1" id="power-bonus" value="'+esc(sea.powerBonus != null ? sea.powerBonus : 2)+'"></div>' +
+          '<button class="btn primary" data-action="save-power">Enregistrer</button>' +
         '</div>' +
       '</div>' +
       (cur ? (
@@ -1246,6 +1539,12 @@ function renderProfMatchs(){
       ) : '<div class="card empty">Aucun match à jouer. Générez un programme ci-dessus.</div>') +
       correction +
       '<div class="card stack"><div class="eyebrow">Résultats</div>'+resultats+'</div>' +
+      fairness +
+      '<div class="card stack">' +
+        '<div class="eyebrow">Couleurs des chasubles</div>' +
+        '<p class="muted">Changez la couleur d\'une équipe à tout moment, même en plein tournoi : ses matchs et son historique restent attachés à l\'équipe.</p>' +
+        teamChips +
+      '</div>' +
     '</div>'
   );
 }
@@ -1270,9 +1569,102 @@ function generateRoundRobinPairs(teamIds){
   return rounds;
 }
 
-function computeRanking(scopeSeanceId){
+// ---- répartition équitable des terrains ----
+// 1) round-robin : chaque équipe rencontre toutes les autres une fois ;
+// 2) si une ronde compte plus de matchs que de terrains, elle est découpée en
+//    plusieurs rondes (les équipes qui ne jouent pas attendent) ;
+// 3) à chaque ronde, les matchs sont placés sur les terrains de façon à ce
+//    que chaque équipe passe le même nombre de fois sur chaque terrain (à une
+//    unité près quand ce n'est pas divisible). On essaie plusieurs centaines
+//    de tirages et on garde le plus équilibré.
+function permutationsOf(arr, k){
+  var out = [];
+  (function rec(prefix, rest){
+    if (prefix.length === k){ out.push(prefix); return; }
+    for (var i = 0; i < rest.length; i++) rec(prefix.concat([rest[i]]), rest.slice(0,i).concat(rest.slice(i+1)));
+  })([], arr);
+  return out;
+}
+function shuffled(arr){
+  var a = arr.slice();
+  for (var i = a.length-1; i > 0; i--){ var j = Math.floor(Math.random()*(i+1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+  return a;
+}
+function planTournament(teamIds, courts){
+  var rounds = generateRoundRobinPairs(teamIds);
+  var courtIdx = []; for (var c = 0; c < courts; c++) courtIdx.push(c);
+  var permCache = {};
+  var best = null;
+  var tries = courts <= 1 ? 1 : 400;
+  for (var attempt = 0; attempt < tries; attempt++){
+    var counts = {};
+    teamIds.forEach(function(t){ counts[t] = courtIdx.map(function(){ return 0; }); });
+    var waves = [];
+    var order = attempt === 0 ? rounds : shuffled(rounds);
+    order.forEach(function(pairs){
+      var ps = attempt === 0 ? pairs.slice() : shuffled(pairs);
+      for (var start = 0; start < ps.length; start += courts){
+        var group = ps.slice(start, start + courts);
+        var k = group.length;
+        var perms = permCache[k] || (permCache[k] = (courts <= 7 ? permutationsOf(courtIdx, k) : null));
+        var chosen;
+        if (perms){
+          var bestCost = Infinity, cands = [];
+          perms.forEach(function(p){
+            var cost = 0;
+            for (var i = 0; i < k; i++){
+              var a = counts[group[i][0]][p[i]], b = counts[group[i][1]][p[i]];
+              cost += (a+1)*(a+1) + (b+1)*(b+1);
+            }
+            if (cost < bestCost){ bestCost = cost; cands = [p]; }
+            else if (cost === bestCost) cands.push(p);
+          });
+          chosen = cands[attempt === 0 ? 0 : Math.floor(Math.random()*cands.length)];
+        } else {
+          var free = courtIdx.slice(); chosen = [];
+          group.forEach(function(g){
+            free.sort(function(x, y){ return (counts[g[0]][x]+counts[g[1]][x]) - (counts[g[0]][y]+counts[g[1]][y]); });
+            chosen.push(free.shift());
+          });
+        }
+        var wave = group.map(function(g, i){
+          counts[g[0]][chosen[i]]++; counts[g[1]][chosen[i]]++;
+          return {a:g[0], b:g[1], court:chosen[i]};
+        }).sort(function(x, y){ return x.court - y.court; });
+        waves.push(wave);
+      }
+    });
+    // score : écart max-min par équipe (à minimiser), puis somme des carrés
+    var spread = 0, sq = 0;
+    teamIds.forEach(function(t){
+      var arr = counts[t];
+      spread += Math.max.apply(null, arr) - Math.min.apply(null, arr);
+      arr.forEach(function(v){ sq += v*v; });
+    });
+    var score = spread * 10000 + sq;
+    if (!best || score < best.score) best = {score: score, waves: waves, counts: counts};
+  }
+  return best;
+}
+// Nombre de passages de chaque équipe sur chaque terrain pour une leçon
+function courtUsage(seanceId, courts){
+  var usage = {};
+  state.teams.forEach(function(t){ usage[t.id] = []; for (var i = 0; i < courts; i++) usage[t.id].push(0); });
+  state.matches.forEach(function(m){
+    if (m.seanceId !== seanceId) return;
+    var ci = (m.slot||1) - 1;
+    [m.teamAId, m.teamBId].forEach(function(t){
+      if (!usage[t]) return;
+      while (usage[t].length <= ci) usage[t].push(0);
+      usage[t][ci]++;
+    });
+  });
+  return usage;
+}
+
+function computeRanking(scopeIds){
   var matches = state.matches.filter(function(m){
-    return (!scopeSeanceId || m.seanceId===scopeSeanceId) && m.scoreA != null && m.scoreB != null;
+    return scopeIncludes(scopeIds, m.seanceId) && m.scoreA != null && m.scoreB != null;
   });
   var stats = {};
   state.teams.forEach(function(t){ stats[t.id] = {teamId:t.id, played:0, wins:0, draws:0, losses:0, goalPos:0}; });
@@ -1304,16 +1696,14 @@ function computeRanking(scopeSeanceId){
   return {maxPlayed: maxPlayed, list: list};
 }
 
-function computeTirRanking(scopeSeanceId){
-  var tirs = state.tirs.filter(function(t){ return !scopeSeanceId || t.seanceId===scopeSeanceId; });
+function computeTirRanking(scopeIds){
+  var tirs = state.tirs.filter(function(t){ return scopeIncludes(scopeIds, t.seanceId); });
   var byStudent = {};
   state.students.forEach(function(s){ byStudent[s.id] = {studentId:s.id, teamId:s.teamId, values:[]}; });
   var byTeam = {};
   state.teams.forEach(function(t){ byTeam[t.id] = {teamId:t.id, values:[]}; });
   tirs.forEach(function(t){
-    var vals = [];
-    if (t.serie1 != null) vals.push(t.serie1);
-    if (t.serie2 != null) vals.push(t.serie2);
+    var vals = tirAllPoints(t);
     if (!vals.length) return;
     if (byStudent[t.studentId]) byStudent[t.studentId].values = byStudent[t.studentId].values.concat(vals);
     if (byTeam[t.teamId]) byTeam[t.teamId].values = byTeam[t.teamId].values.concat(vals);
@@ -1371,10 +1761,9 @@ function tirPointsForSeance(seanceId){
     var shooters = 0, rawTotal = 0;
     state.tirs.forEach(function(tir){
       if (tir.seanceId !== seanceId || studentIds.indexOf(tir.studentId) === -1) return;
-      var has = false;
-      if (tir.serie1 != null) { rawTotal += tir.serie1; has = true; }
-      if (tir.serie2 != null) { rawTotal += tir.serie2; has = true; }
-      if (has) shooters++;
+      var vals = tirAllPoints(tir);
+      vals.forEach(function(v){ rawTotal += v; });
+      if (vals.length) shooters++;
     });
     return {teamId: t.id, shooters: shooters, rawTotal: rawTotal};
   });
@@ -1404,65 +1793,103 @@ function matchPointsForSeance(seanceId){
   });
   return points;
 }
-function computeGeneralRanking(scopeSeanceId){
-  var seances = scopeSeanceId ? state.seances.filter(function(s){ return s.id===scopeSeanceId; }) : state.seances;
+// Points « super pouvoir » d'une leçon : nombre d'utilisations × bonus de la leçon
+function powerPointsForSeance(seanceId){
+  var points = {};
+  state.teams.forEach(function(t){ points[t.id] = 0; });
+  var p = seancePower(seanceById(seanceId));
+  var bonus = p ? p.bonus : 2;
+  state.matches.forEach(function(m){
+    if (m.seanceId !== seanceId || m.scoreA == null || m.scoreB == null) return;
+    if (points[m.teamAId] != null) points[m.teamAId] += (m.powerA||0) * bonus;
+    if (points[m.teamBId] != null) points[m.teamBId] += (m.powerB||0) * bonus;
+  });
+  return points;
+}
+function computeGeneralRanking(scopeIds){
+  var seances = seancesChrono().filter(function(s){ return scopeIncludes(scopeIds, s.id); });
   var totals = {};
-  state.teams.forEach(function(t){ totals[t.id] = {teamId:t.id, tirPoints:0, matchPoints:0}; });
+  state.teams.forEach(function(t){ totals[t.id] = {teamId:t.id, tirPoints:0, matchPoints:0, powerPoints:0}; });
   var bySeance = seances.map(function(sea){
     var tirPts = tirPointsForSeance(sea.id);
     var matchPts = matchPointsForSeance(sea.id);
+    var powerPts = powerPointsForSeance(sea.id);
     state.teams.forEach(function(t){
-      var tp = (tirPts[t.id] && tirPts[t.id].points) || 0;
-      var mp = matchPts[t.id] || 0;
-      totals[t.id].tirPoints += tp;
-      totals[t.id].matchPoints += mp;
+      totals[t.id].tirPoints += (tirPts[t.id] && tirPts[t.id].points) || 0;
+      totals[t.id].matchPoints += matchPts[t.id] || 0;
+      totals[t.id].powerPoints += powerPts[t.id] || 0;
     });
-    return {seance: sea, tirPts: tirPts, matchPts: matchPts};
+    return {seance: sea, tirPts: tirPts, matchPts: matchPts, powerPts: powerPts};
   });
   var list = Object.values(totals).map(function(t){
-    return Object.assign({}, t, {total: t.tirPoints + t.matchPoints});
+    return Object.assign({}, t, {total: t.tirPoints + t.matchPoints + t.powerPoints});
   });
   list.sort(function(a, b){
     if (b.total !== a.total) return b.total - a.total;
     return colorForTeam(a.teamId).label.localeCompare(colorForTeam(b.teamId).label);
   });
-  return {list: list, bySeance: bySeance, scopeSeanceId: scopeSeanceId};
+  return {list: list, bySeance: bySeance, scopeIds: scopeIds};
+}
+// Rangs (1 = premier, ex æquo partagés) à partir d'une liste triée et d'une clé
+function ranksOf(list, keyFn){
+  var ranks = {}, prevKey = null, prevRank = 0;
+  list.forEach(function(r, i){
+    var k = keyFn(r);
+    var rank = (i > 0 && k === prevKey) ? prevRank : i+1;
+    ranks[r.teamId || r.studentId] = rank; prevKey = k; prevRank = rank;
+  });
+  return ranks;
+}
+function evoHtml(prevRanks, id, rank){
+  if (!prevRanks || prevRanks[id] == null) return '<td></td>';
+  var d = prevRanks[id] - rank;
+  if (d > 0) return '<td><span class="rank-evo up" title="Gagne '+d+' place(s) depuis la leçon précédente">▲ '+d+'</span></td>';
+  if (d < 0) return '<td><span class="rank-evo down" title="Perd '+(-d)+' place(s) depuis la leçon précédente">▼ '+(-d)+'</span></td>';
+  return '<td><span class="rank-evo muted">=</span></td>';
+}
+function scopeTitle(scope){
+  if (!scope || scope === 'all') return 'Tout le cycle';
+  var chrono = seancesChrono();
+  var parts = scope.split(':'); var kind = parts.length>1?parts[0]:'only'; var id = parts.length>1?parts[1]:parts[0];
+  var idx = chrono.findIndex(function(s){ return s.id===id; });
+  if (idx === -1) return '';
+  return (kind === 'upto' ? 'Classement à l\'issue de la leçon '+(idx+1) : 'Leçon '+(idx+1)+' seule') + ' — ' + chrono[idx].label;
+}
+function scopeSelectHtml(id, action, current){
+  return '<div class="field"><label>Classement</label><select id="'+id+'" data-action="'+action+'">'+scopeOptionsHtml(current)+'</select></div>';
 }
 
 function renderProfClassementTir(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var opts = '<option value="all"'+(state.classementTirScope==='all'?' selected':'')+'>Toutes les leçons cumulées</option>' +
-    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementTirScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
   var res = state.classementTirResult;
   var tables = '';
   if (res){
-    var sea = state.classementTirScope !== 'all' ? seanceById(state.classementTirScope) : null;
-    var step = sea ? sea.tirStep : (state.seances[0] ? state.seances[0].tirStep : 0.5);
     var studentRows = res.students.map(function(r, i){
       var stu = studentById(r.studentId);
       var c = colorForTeam(r.teamId);
       if (!stu) return '';
       return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td><td>'+esc(stu.firstName)+'</td>' +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
-        '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
+        '<td>'+r.n+'</td><td>'+fmtNum(r.avg)+'</td><td>'+fmtNum(r.best)+'</td></tr>';
     }).join('') || '<tr><td colspan="6" class="empty">Aucun résultat.</td></tr>';
     var teamRows = res.teams.map(function(r, i){
       var c = colorForTeam(r.teamId);
       return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td>' +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
-        '<td>'+r.n+'</td><td>'+fmtNum(r.avg, step)+'</td><td>'+fmtNum(r.best, step)+'</td></tr>';
+        '<td>'+r.n+'</td><td>'+fmtNum(r.avg)+'</td><td>'+fmtNum(r.best)+'</td></tr>';
     }).join('') || '<tr><td colspan="5" class="empty">Aucun résultat.</td></tr>';
     tables =
-      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Élèves</div><table><thead><tr><th>Rang</th><th>Élève</th><th>Équipe</th><th>Séries</th><th>Moyenne</th><th>Meilleure série</th></tr></thead><tbody>'+studentRows+'</tbody></table></div>' +
-      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Équipes</div><table><thead><tr><th>Rang</th><th>Équipe</th><th>Séries</th><th>Moyenne</th><th>Meilleure série</th></tr></thead><tbody>'+teamRows+'</tbody></table></div>';
+      '<div class="eyebrow">'+esc(scopeTitle(state.classementTirScope))+'</div>' +
+      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Élèves</div><table><thead><tr><th>Rang</th><th>Élève</th><th>Équipe</th><th>Séries</th><th>Moyenne (pts)</th><th>Meilleure série</th></tr></thead><tbody>'+studentRows+'</tbody></table></div>' +
+      '<div class="card table-wrap"><div class="eyebrow" style="margin-bottom:10px">Équipes</div><table><thead><tr><th>Rang</th><th>Équipe</th><th>Séries</th><th>Moyenne (pts)</th><th>Meilleure série</th></tr></thead><tbody>'+teamRows+'</tbody></table></div>';
   }
   return (
     '<div class="stack">' +
       '<div class="row">' +
-        '<div class="field"><label>Portée</label><select id="classement-tir-scope" data-action="classement-tir-scope">'+opts+'</select></div>' +
+        scopeSelectHtml('classement-tir-scope', 'classement-tir-scope', state.classementTirScope) +
         '<button class="btn primary" data-action="calc-classement-tir">Calculer le classement</button>' +
       '</div>' +
-      '<p class="muted">Classement de précision au tir, par élève et par équipe, selon la moyenne de toutes les séries saisies sur la portée choisie (la meilleure série départage les égalités).</p>' +
+      '<p class="muted">Classement de précision au tir, par élève et par équipe, selon la moyenne des points de toutes les séries saisies (la meilleure série départage les égalités). « À l\'issue de la leçon N » cumule les leçons 1 à N.</p>' +
       tables +
     '</div>'
   );
@@ -1470,8 +1897,6 @@ function renderProfClassementTir(){
 
 function renderProfClassement(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var opts = '<option value="all"'+(state.classementScope==='all'?' selected':'')+'>Toutes les leçons cumulées</option>' +
-    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementScope===s.id?' selected':'')+'>'+esc(s.label)+'</option>'; }).join('');
   var res = state.classementResult;
   var table = '';
   if (res){
@@ -1482,15 +1907,16 @@ function renderProfClassement(){
         '<td>'+r.played+'</td><td>'+r.wins+'</td><td>'+r.draws+'</td><td>'+r.losses+'</td>' +
         '<td>'+r.coef.toFixed(2)+'</td><td>'+r.adjPoints.toFixed(2)+'</td><td>'+r.adjGoal.toFixed(2)+'</td></tr>';
     }).join('') || '<tr><td colspan="9" class="empty">Aucune équipe.</td></tr>';
-    table = '<div class="card table-wrap"><table><thead><tr><th>Rang</th><th>Équipe</th><th>MJ</th><th>V</th><th>N</th><th>D</th><th>Coef.</th><th>Pts ajustés</th><th>Goal avg. ajusté</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    table = '<div class="eyebrow">'+esc(scopeTitle(state.classementScope))+'</div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Rang</th><th>Équipe</th><th>MJ</th><th>V</th><th>N</th><th>D</th><th>Coef.</th><th>Pts ajustés</th><th>Goal avg. ajusté</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   }
   return (
     '<div class="stack">' +
       '<div class="row">' +
-        '<div class="field"><label>Portée</label><select id="classement-scope" data-action="classement-scope">'+opts+'</select></div>' +
+        scopeSelectHtml('classement-scope', 'classement-scope', state.classementScope) +
         '<button class="btn primary" data-action="calc-classement">Calculer le classement</button>' +
       '</div>' +
-      '<p class="muted">Classement = victoires × coefficient de rattrapage (matchs joués par l\'équipe la plus active ÷ matchs joués par l\'équipe), en cas d\'égalité le goal average positif (points marqués au-delà de l\'adversaire, jamais négatif) ajusté du même coefficient départage.</p>' +
+      '<p class="muted">Classement = victoires × coefficient de rattrapage (matchs joués par l\'équipe la plus active ÷ matchs joués par l\'équipe), en cas d\'égalité le goal average positif (points marqués au-delà de l\'adversaire, jamais négatif) ajusté du même coefficient départage. Les bonus (3 marqueurs, super pouvoir) comptent dans le classement général.</p>' +
       table +
     '</div>'
   );
@@ -1498,40 +1924,49 @@ function renderProfClassement(){
 
 function renderProfClassementGeneral(){
   var warn = requireAdminClass(); if (warn) return warn;
-  var opts = '<option value="all"'+(state.classementGeneralScope==='all'?' selected':'')+'>Toutes les leçons du cycle (cumulé)</option>' +
-    state.seances.map(function(s){ return '<option value="'+s.id+'"'+(state.classementGeneralScope===s.id?' selected':'')+'>'+esc(s.label)+' (cette leçon)</option>'; }).join('');
   var res = state.classementGeneralResult;
   var table = '';
   if (res){
+    var ranks = ranksOf(res.list, function(r){ return r.total; });
+    var prevIds = previousScopeIds(state.classementGeneralScope);
+    var prevRanks = null;
+    if (prevIds){
+      var prev = computeGeneralRanking(prevIds);
+      prevRanks = ranksOf(prev.list, function(r){ return r.total; });
+    }
     var rows = res.list.map(function(r, i){
       var c = colorForTeam(r.teamId);
-      return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+(i+1)+'</td>' +
+      return '<tr class="'+(i===0?'rank-1':'')+'"><td>'+ranks[r.teamId]+'</td>' +
+        (prevRanks ? evoHtml(prevRanks, r.teamId, ranks[r.teamId]) : '') +
         '<td><span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span></td>' +
-        '<td>'+r.tirPoints+'</td><td>'+r.matchPoints+'</td><td><strong>'+r.total+'</strong></td></tr>';
-    }).join('') || '<tr><td colspan="5" class="empty">Aucune équipe.</td></tr>';
-    table = '<div class="card table-wrap"><table><thead><tr><th>Rang</th><th>Équipe</th><th>Pts précision</th><th>Pts matchs</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+        '<td>'+r.tirPoints+'</td><td>'+r.matchPoints+'</td><td>'+r.powerPoints+'</td><td><strong>'+r.total+'</strong></td></tr>';
+    }).join('') || '<tr><td colspan="7" class="empty">Aucune équipe.</td></tr>';
+    table = '<div class="eyebrow">'+esc(scopeTitle(state.classementGeneralScope))+'</div>' +
+      '<div class="card table-wrap"><table><thead><tr><th>Rang</th>'+(prevRanks?'<th title="Évolution depuis la leçon précédente">Évol.</th>':'')+'<th>Équipe</th><th>Pts précision</th><th>Pts matchs</th><th>Pts ⚡ pouvoir</th><th>Total</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     if (res.bySeance.length > 1){
       var detailRows = res.bySeance.map(function(entry){
         var lines = state.teams.map(function(t){
           var tp = (entry.tirPts[t.id] && entry.tirPts[t.id].points) || 0;
           var mp = entry.matchPts[t.id] || 0;
+          var pp = entry.powerPts[t.id] || 0;
           var c = colorForTeam(t.id);
-          return '<span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span> '+tp+'+'+mp+'='+(tp+mp);
+          return '<span class="chip" style="'+swatchStyle(c)+'">'+esc(c.label)+'</span> '+tp+'+'+mp+(pp?'+'+pp:'')+'='+(tp+mp+pp);
         }).join(' · ');
         return '<div class="list-row"><div><strong>'+esc(entry.seance.label)+'</strong></div><div class="muted" style="text-align:right">'+lines+'</div></div>';
       }).join('');
-      table += '<div class="card stack"><div class="eyebrow">Détail par leçon (précision + matchs = total)</div>'+detailRows+'</div>';
+      table += '<div class="card stack"><div class="eyebrow">Détail par leçon (précision + matchs + pouvoir = total)</div>'+detailRows+'</div>';
     }
   }
   return (
     '<div class="stack">' +
       '<div class="row">' +
-        '<div class="field"><label>Portée</label><select id="classement-general-scope" data-action="classement-general-scope">'+opts+'</select></div>' +
+        scopeSelectHtml('classement-general-scope', 'classement-general-scope', state.classementGeneralScope) +
         '<button class="btn primary" data-action="calc-classement-general">Calculer le classement</button>' +
       '</div>' +
-      '<p class="muted">Classement général = points « précision au tir » + points « matchs », pour la leçon choisie ou cumulés sur tout le cycle. ' +
+      '<p class="muted">Classement général = points « précision au tir » + points « matchs » + points « super pouvoir ». « À l\'issue de la leçon N » cumule les leçons 1 à N ; la colonne « Évol. » montre les places gagnées ou perdues depuis la leçon précédente. ' +
       'Précision : l\'équipe qui a le plus marqué (total pondéré selon le nombre de tireurs, pour ne pas pénaliser une équipe à effectif réduit ou avec un·e absent·e) reçoit n-1 points, la suivante n-2, jusqu\'à 0 pour la dernière (n = nombre d\'équipes). ' +
-      'Matchs, par ronde : victoire 4 pts (5 si 3 marqueurs différents) / égalité 2 pts (3 si 3 marqueurs différents) / défaite 1 pt (3 si 3 marqueurs différents).</p>' +
+      'Matchs, par ronde : victoire 4 pts (5 si 3 marqueurs différents) / égalité 2 pts (3 si 3 marqueurs différents) / défaite 1 pt (3 si 3 marqueurs différents). ' +
+      'Super pouvoir : chaque utilisation rapporte le bonus défini pour la leçon.</p>' +
       table +
     '</div>'
   );
@@ -1575,7 +2010,10 @@ function wireDynamic(){
     slider.addEventListener('input', function(){
       state.saisieValue = parseFloat(slider.value);
       var disp = document.getElementById('slider-display');
-      if (disp) disp.textContent = fmtNum(state.saisieValue);
+      var shots = slider.getAttribute('data-shots');
+      if (disp) disp.innerHTML = fmtNum(state.saisieValue) + (shots ? ' <small style="font-size:.4em">/ '+shots+'</small>' : '');
+      var pd = document.getElementById('slider-points');
+      if (pd) pd.textContent = '= ' + fmtNum(state.saisieValue * (parseInt(slider.getAttribute('data-value'),10)||1)) + ' pts';
     });
   }
   var scoreASlider = document.getElementById('match-scoreA');
@@ -1664,7 +2102,8 @@ function handleAction(action, el){
     case 'start-saisie':
       state.saisieSerie = parseInt(el.getAttribute('data-serie'), 10);
       var sea = activeSeance();
-      state.saisieValue = sea && sea.tirMin != null ? sea.tirMin + (sea.tirMax - sea.tirMin) / 2 : 5;
+      var ss = seanceSeries(sea)[state.saisieSerie-1] || seanceSeries(sea)[0];
+      state.saisieValue = Math.round(ss.min + (ss.shots - ss.min) / 2);
       setView('eleve-saisie');
       break;
     case 'cancel-saisie': setView('eleve-fiche'); break;
@@ -1686,10 +2125,18 @@ function handleAction(action, el){
     case 'timer-pause': pauseTimer(); break;
     case 'timer-end': endTimerNow(); break;
     case 'timer-reset': resetTimer(); break;
-    case 'timer-duration':
-      var mins = Math.max(1, parseInt(el.value, 10) || 8);
-      state.roundTimer.duration = mins * 60;
-      if (!state.roundTimer.running){ state.roundTimer.remaining = state.roundTimer.duration; state.roundTimer.halfBeeped = false; }
+    case 'timer-adjust':
+      // + / − : 1 minute. Avant le début : change la durée. Pendant le match
+      // (ou en pause) : ajoute/retire aussi une minute au temps restant.
+      var delta = parseInt(el.getAttribute('data-delta'), 10) || 0;
+      var rt = state.roundTimer;
+      var started = rt.running || (rt.remaining < rt.duration && !rt.ended);
+      rt.duration = Math.max(60, rt.duration + delta);
+      if (started){
+        rt.remaining = Math.max(1, Math.min(rt.duration, rt.remaining + delta));
+      } else if (!rt.ended){
+        rt.remaining = rt.duration; rt.halfBeeped = false;
+      }
       render();
       break;
     case 'timer-duration-preset':
@@ -1717,6 +2164,24 @@ function handleAction(action, el){
     case 'delete-student': deleteStudent(el.getAttribute('data-id')); break;
 
     case 'create-seance': createSeance(); break;
+    case 'seance-series-add':
+      if (state.seanceForm && state.seanceForm.series.length < 10){
+        var prevS = state.seanceForm.series[state.seanceForm.series.length-1] || {shots:10, value:1};
+        state.seanceForm.series.push({name:'Série '+(state.seanceForm.series.length+1), shots: prevS.shots, value: prevS.value});
+      }
+      render();
+      break;
+    case 'seance-series-remove':
+      if (state.seanceForm && state.seanceForm.series.length > 1){
+        state.seanceForm.series.splice(parseInt(el.getAttribute('data-idx'),10), 1);
+      }
+      render();
+      break;
+    case 'edit-seance':
+      var es = seanceById(el.getAttribute('data-id'));
+      if (es){ state.seanceForm = seanceFormFrom(es); render(); window.scrollTo({top:0, behavior:'smooth'}); }
+      break;
+    case 'cancel-edit-seance': state.seanceForm = null; render(); break;
     case 'delete-seance': deleteSeance(el.getAttribute('data-id')); break;
     case 'set-active-seance':
       db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: el.getAttribute('data-id')}));
@@ -1741,8 +2206,40 @@ function handleAction(action, el){
       render();
       break;
     case 'cancel-edit-match':
-      state.matchForm = {seanceId: state.matchForm.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
+      state.matchForm = {seanceId: state.matchForm.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0, editingId:null};
       render();
+      break;
+    case 'match-power':
+      var mpside = el.getAttribute('data-side');
+      state.matchForm['power'+mpside] = Math.max(0, (state.matchForm['power'+mpside]||0) + (parseInt(el.getAttribute('data-delta'),10)||0));
+      render();
+      break;
+    case 'round-power':
+      var rpid = el.getAttribute('data-id'), rpside = el.getAttribute('data-side');
+      if (!state.roundEntry[rpid]) state.roundEntry[rpid] = {scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0};
+      state.roundEntry[rpid]['power'+rpside] = Math.max(0, (state.roundEntry[rpid]['power'+rpside]||0) + (parseInt(el.getAttribute('data-delta'),10)||0));
+      render();
+      break;
+    case 'save-power':
+      var psea = activeSeance(); if (!psea) break;
+      var pname = ((document.getElementById('power-name')||{}).value || '').trim();
+      var pbonus = Math.max(1, parseInt((document.getElementById('power-bonus')||{}).value, 10) || 2);
+      db.doc('classes/'+state.adminClassId+'/seances/'+psea.id).update({powerName: pname, powerBonus: pbonus}).then(function(){
+        state.classementGeneralResult = null;
+        flash(pname ? 'Super pouvoir enregistré : « '+pname+' » (+'+pbonus+' par utilisation).' : 'Super pouvoir désactivé pour cette leçon.');
+      });
+      break;
+    case 'courts-adjust':
+      var nc = Math.min(8, Math.max(1, currentCourts() + (parseInt(el.getAttribute('data-delta'),10)||0)));
+      db.doc('app/config').set(Object.assign({}, state.config, {courtCount: nc}));
+      break;
+    case 'court-name':
+      var cidx = parseInt(el.getAttribute('data-idx'), 10);
+      var cnames = (state.config.courtNames || []).slice();
+      while (cnames.length <= cidx) cnames.push('');
+      if (cnames[cidx] === (el.value || '').trim()) break;
+      cnames[cidx] = (el.value || '').trim();
+      db.doc('app/config').set(Object.assign({}, state.config, {courtNames: cnames}));
       break;
     case 'generate-schedule': generateSchedule(); break;
     case 'delete-match':
@@ -1751,17 +2248,17 @@ function handleAction(action, el){
 
     case 'classement-scope': state.classementScope = el.value; state.classementResult = null; render(); break;
     case 'calc-classement':
-      state.classementResult = computeRanking(state.classementScope === 'all' ? null : state.classementScope);
+      state.classementResult = computeRanking(resolveScope(state.classementScope));
       render();
       break;
     case 'classement-tir-scope': state.classementTirScope = el.value; state.classementTirResult = null; render(); break;
     case 'calc-classement-tir':
-      state.classementTirResult = computeTirRanking(state.classementTirScope === 'all' ? null : state.classementTirScope);
+      state.classementTirResult = computeTirRanking(resolveScope(state.classementTirScope));
       render();
       break;
     case 'classement-general-scope': state.classementGeneralScope = el.value; state.classementGeneralResult = null; render(); break;
     case 'calc-classement-general':
-      state.classementGeneralResult = computeGeneralRanking(state.classementGeneralScope === 'all' ? null : state.classementGeneralScope);
+      state.classementGeneralResult = computeGeneralRanking(resolveScope(state.classementGeneralScope));
       render();
       break;
   }
@@ -1774,8 +2271,16 @@ function validerSaisie(){
   if (!db || !sea || !stu) return;
   var docId = sea.id + '_' + stu.id;
   var ref = db.doc('classes/'+state.config.activeClassId+'/tirs/'+docId);
-  var field = 'serie' + state.saisieSerie;
-  var payload = {}; payload[field] = state.saisieValue; payload['ts'+state.saisieSerie] = Date.now();
+  var n = state.saisieSerie;
+  var s = seanceSeries(sea)[n-1];
+  var made = Math.round(state.saisieValue);
+  var payload = {}; payload['ts'+n] = Date.now();
+  if (s && !s.legacy){
+    payload['made'+n] = made;
+    payload['serie'+n] = made * s.value;
+  } else {
+    payload['serie'+n] = made;
+  }
   ref.get().then(function(snap){
     if (snap.exists){
       return ref.update(payload);
@@ -1797,10 +2302,11 @@ function saveRoundScores(){
   if (!state.roundTimer.ended){ flash('Attends la fin du temps (ou clique sur « Fin ») avant de saisir les scores.', 'error'); return; }
   var classId = state.config.activeClassId;
   var writes = cur.matches.map(function(m){
-    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false};
+    var entry = state.roundEntry[m.id] || {scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0};
     return state.db.doc('classes/'+classId+'/matches/'+m.id).update({
       scoreA: Math.round(entry.scoreA)||0, scoreB: Math.round(entry.scoreB)||0,
-      scorersA3: !!entry.scorersA, scorersB3: !!entry.scorersB, ts: Date.now()
+      scorersA3: !!entry.scorersA, scorersB3: !!entry.scorersB,
+      powerA: entry.powerA||0, powerB: entry.powerB||0, ts: Date.now()
     });
   });
   Promise.all(writes).then(function(){
@@ -2008,16 +2514,51 @@ function addStudent(teamId){
 }
 
 function createSeance(){
-  var label = document.getElementById('new-seance-label').value.trim() || ('Leçon du ' + document.getElementById('new-seance-date').value);
-  var date = document.getElementById('new-seance-date').value;
-  var min = Math.round(parseFloat(document.getElementById('new-seance-min').value));
-  var max = Math.round(parseFloat(document.getElementById('new-seance-max').value));
-  state.db.collection('classes/'+state.adminClassId+'/seances').add({
-    label: label, date: date, tirMin: min, tirMax: max, tirStep: 1, createdAt: Date.now()
-  }).then(function(ref){
+  var f = state.seanceForm;
+  if (!f) return;
+  var date = f.date || new Date().toISOString().slice(0,10);
+  var label = (f.label || '').trim() || ('Leçon du ' + date);
+  var series = f.series.map(function(s, i){
+    return {
+      name: (s.name || '').trim() || ('Série '+(i+1)),
+      shots: Math.max(1, parseInt(s.shots, 10) || 10),
+      value: Math.max(1, parseInt(s.value, 10) || 1)
+    };
+  });
+  var bonus = Math.max(1, parseInt(f.powerBonus, 10) || 2);
+  var data = {
+    label: label, date: date, series: series,
+    // tirMin/tirMax conservés pour compatibilité avec les anciennes versions
+    tirMin: 0, tirMax: series[0].shots, tirStep: 1,
+    powerName: (f.powerName || '').trim(), powerBonus: bonus
+  };
+  var base = 'classes/'+state.adminClassId+'/seances';
+  if (f.editingId){
+    state.db.doc(base+'/'+f.editingId).update(data).then(function(){
+      state.seanceForm = null;
+      state.classementResult = null; state.classementTirResult = null; state.classementGeneralResult = null;
+      flash('Leçon modifiée.');
+    });
+    return;
+  }
+  data.createdAt = Date.now();
+  state.db.collection(base).add(data).then(function(ref){
+    state.seanceForm = null;
     state.db.doc('app/config').set(Object.assign({}, state.config, {activeClassId: state.adminClassId, activeSeanceId: ref.id}));
     flash('Leçon créée et activée.');
   });
+}
+// Champs du formulaire « leçon » : mis à jour dans l'état sans re-rendu
+// (pour ne pas perdre le focus pendant la frappe).
+function setSeanceFormField(path, value){
+  var f = state.seanceForm; if (!f) return;
+  var parts = path.split('.');
+  if (parts[0] === 'series'){
+    var s = f.series[parseInt(parts[1],10)]; if (!s) return;
+    s[parts[2]] = (parts[2] === 'name') ? value : (parseInt(value, 10) || '');
+  } else {
+    f[parts[0]] = value;
+  }
 }
 function deleteStudent(studentId){
   if (!studentId || !state.adminClassId) return;
@@ -2028,6 +2569,7 @@ function deleteStudent(studentId){
 }
 function deleteSeance(id){
   if (!confirm('Supprimer cette leçon ainsi que ses résultats de tir et ses matchs ?')) return;
+  if (state.seanceForm && state.seanceForm.editingId === id) state.seanceForm = null;
   var base = 'classes/'+state.adminClassId;
   Promise.all([
     state.db.collection(base+'/tirs').where('seanceId','==',id).get().then(function(snap){
@@ -2054,10 +2596,11 @@ function addMatch(){
   var scoreA = parseFloat(document.getElementById('match-scoreA').value) || 0;
   var scoreB = parseFloat(document.getElementById('match-scoreB').value) || 0;
   state.db.doc('classes/'+state.adminClassId+'/matches/'+f.editingId).update({
-    scoreA: scoreA, scoreB: scoreB, scorersA3: !!f.scorersA, scorersB3: !!f.scorersB, ts: Date.now()
+    scoreA: scoreA, scoreB: scoreB, scorersA3: !!f.scorersA, scorersB3: !!f.scorersB,
+    powerA: f.powerA||0, powerB: f.powerB||0, ts: Date.now()
   }).then(function(){
     flash('Score corrigé.');
-    state.matchForm = {seanceId: f.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, editingId:null};
+    state.matchForm = {seanceId: f.seanceId, teamA:null, teamB:null, scoreA:0, scoreB:0, scorersA:false, scorersB:false, powerA:0, powerB:0, editingId:null};
     state.classementGeneralResult = null;
     render();
   });
@@ -2070,6 +2613,7 @@ function editMatch(matchId){
     seanceId: m.seanceId, teamA: m.teamAId, teamB: m.teamBId,
     scoreA: m.scoreA != null ? m.scoreA : 0, scoreB: m.scoreB != null ? m.scoreB : 0,
     scorersA: !!m.scorersA3, scorersB: !!m.scorersB3,
+    powerA: m.powerA||0, powerB: m.powerB||0,
     editingId: matchId
   };
   render();
@@ -2079,30 +2623,24 @@ function generateSchedule(){
   var sea = activeSeance();
   if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
   var seanceId = sea.id;
-  var courts = Math.max(1, parseInt(document.getElementById('tournament-courts').value, 10) || 1);
+  var courts = currentCourts();
   var teamIds = state.teams.map(function(t){return t.id;});
   if (teamIds.length < 2){ flash('Il faut au moins deux équipes.', 'error'); return; }
   var existingScheduled = state.matches.filter(function(m){ return m.seanceId===seanceId && m.scoreA == null; });
   var doGenerate = function(){
-    var rounds = generateRoundRobinPairs(teamIds);
+    var plan = planTournament(teamIds, courts);
     var writes = [];
-    rounds.forEach(function(pairs, ri){
-      // On fait tourner l'ordre des matchs de la ronde à chaque ronde, pour
-      // qu'un même terrain (ex. le terrain 3, moins apprécié) ne revienne
-      // pas toujours pour les mêmes équipes : le terrain est le numéro du
-      // match dans cet ordre tourné, modulo le nombre de terrains.
-      var offset = pairs.length ? (ri % pairs.length) : 0;
-      var rotated = pairs.slice(offset).concat(pairs.slice(0, offset));
-      rotated.forEach(function(pair, pi){
-        var slot = (pi % courts) + 1;
+    plan.waves.forEach(function(wave, wi){
+      wave.forEach(function(g){
         writes.push(state.db.collection('classes/'+state.adminClassId+'/matches').add({
-          seanceId: seanceId, teamAId: pair[0], teamBId: pair[1],
-          scoreA: null, scoreB: null, scorersA3: false, scorersB3: false, round: ri+1, slot: slot, ts: Date.now()
+          seanceId: seanceId, teamAId: g.a, teamBId: g.b,
+          scoreA: null, scoreB: null, scorersA3: false, scorersB3: false, powerA: 0, powerB: 0,
+          round: wi+1, slot: g.court+1, ts: Date.now()
         }));
       });
     });
     Promise.all(writes).then(function(){
-      flash('Programme généré : '+writes.length+' match(s) sur '+rounds.length+' ronde(s).');
+      flash('Programme généré : '+writes.length+' match(s) sur '+plan.waves.length+' ronde(s), terrains répartis équitablement.');
     });
   };
   if (existingScheduled.length){
@@ -2119,16 +2657,39 @@ function exportCsv(){
   var sea = activeSeance();
   if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
   var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
-  var lines = ['Leçon;Équipe;Élève;Série 1;Série 2'];
+  var header = tirResultHeader(sea);
+  var lines = [['Leçon','Équipe','Élève'].concat(header).join(';')];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
     if (!stu) return;
-    lines.push([sea.label, colorForTeam(t.teamId).label, stu.firstName, t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:''].join(';'));
+    lines.push([sea.label, colorForTeam(t.teamId).label, stu.firstName].concat(tirResultCells(t, sea)).join(';'));
   });
   var csv = lines.join('\n');
   getDownloads().then(function(d){
     d.save({filename:'tirscore-resultats.csv', data: csv}).catch(function(){});
   });
+}
+
+// Colonnes d'export : pour chaque série, tirs réussis et points, puis total.
+function tirResultHeader(sea){
+  var h = [];
+  seanceSeries(sea).forEach(function(s){
+    if (s.legacy) h.push(s.name);
+    else { h.push(s.name+' — réussis /'+s.shots); h.push(s.name+' — points (×'+s.value+')'); }
+  });
+  h.push('Total points');
+  return h;
+}
+function tirResultCells(t, sea){
+  var cells = [], total = 0;
+  seanceSeries(sea).forEach(function(s, i){
+    var p = tirSeriePoints(t, sea, i+1);
+    if (p != null) total += p;
+    if (s.legacy) cells.push(p != null ? p : '');
+    else { cells.push(t['made'+(i+1)] != null ? t['made'+(i+1)] : ''); cells.push(p != null ? p : ''); }
+  });
+  cells.push(total);
+  return cells;
 }
 
 function exportXlsx(){
@@ -2137,19 +2698,22 @@ function exportXlsx(){
   if (!sea){ flash('Aucune leçon en cours.', 'error'); return; }
   var tirs = state.tirs.filter(function(t){ return t.seanceId===sea.id; });
 
-  var resultRows = [['Leçon','Date','Équipe','Élève','Série 1','Série 2']];
+  var resultRows = [['Leçon','Date','Équipe','Élève'].concat(tirResultHeader(sea))];
   tirs.forEach(function(t){
     var stu = studentById(t.studentId);
     if (!stu) return;
-    resultRows.push([sea.label, sea.date||'', colorForTeam(t.teamId).label, stu.firstName,
-      t.serie1!=null?t.serie1:'', t.serie2!=null?t.serie2:'']);
+    resultRows.push([sea.label, sea.date||'', colorForTeam(t.teamId).label, stu.firstName].concat(tirResultCells(t, sea)));
   });
 
-  var matchRows = [['Leçon','Ronde','Équipe A','Score A','Score B','Équipe B','Statut']];
-  state.matches.filter(function(m){ return m.seanceId===sea.id; }).slice().sort(function(a,b){return (a.round||0)-(b.round||0) || (a.ts||0)-(b.ts||0);}).forEach(function(m){
+  var pw = seancePower(sea);
+  var matchRows = [['Leçon','Ronde','Terrain','Équipe A','Score A','Score B','Équipe B','3 marqueurs A','3 marqueurs B',
+    'Super pouvoir A'+(pw?' ('+pw.name+')':''),'Super pouvoir B','Statut']];
+  state.matches.filter(function(m){ return m.seanceId===sea.id; }).slice().sort(function(a,b){return (a.round||0)-(b.round||0) || (a.slot||0)-(b.slot||0);}).forEach(function(m){
     var played = m.scoreA != null;
-    matchRows.push([sea.label, m.round||'', colorForTeam(m.teamAId).label,
-      played?m.scoreA:'', played?m.scoreB:'', colorForTeam(m.teamBId).label, played?'joué':'à jouer']);
+    matchRows.push([sea.label, m.round||'', courtName(m.slot), colorForTeam(m.teamAId).label,
+      played?m.scoreA:'', played?m.scoreB:'', colorForTeam(m.teamBId).label,
+      played?(m.scorersA3?'oui':'non'):'', played?(m.scorersB3?'oui':'non'):'',
+      played?(m.powerA||0):'', played?(m.powerB||0):'', played?'joué':'à jouer']);
   });
 
   var wb = XLSX.utils.book_new();
@@ -2274,7 +2838,13 @@ function restoreBackup(backup){
 document.getElementById('app').addEventListener('click', function(e){
   var el = e.target.closest('[data-action]');
   if (!el) return;
+  // Les champs de saisie et listes déroulantes réagissent à « change », pas au clic.
+  if (el.tagName === 'INPUT' || el.tagName === 'SELECT') return;
   handleAction(el.getAttribute('data-action'), el);
+});
+document.getElementById('app').addEventListener('input', function(e){
+  var sf = e.target.getAttribute && e.target.getAttribute('data-sf');
+  if (sf) setSeanceFormField(sf, e.target.value);
 });
 document.getElementById('app').addEventListener('change', function(e){
   var el = e.target.closest('[data-action]');

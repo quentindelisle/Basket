@@ -54,6 +54,20 @@ Les résultats de tir peuvent aussi être exportés en CSV ou en Excel
 ⚠️ Vider le cache du navigateur, ou désinstaller l'app, efface les données
 stockées localement — pensez à sauvegarder avant.
 
+## Nouveautés v3.0
+
+- **Leçons** : nombre de séries de tirs au choix, avec pour chaque série un
+  nom, un nombre de tirs et une valeur par tir réussi (1, 2, 3 pts…).
+  L'élève saisit ses tirs réussis, l'app calcule les points. Chaque leçon
+  affiche le résumé des exercices prévus et peut être modifiée.
+- **Tournoi** : terrains nommés (nom affiché partout), répartition équitable
+  des équipes sur les terrains, tableau de répartition par équipe.
+- **Super pouvoir** : thème nommé par leçon, compteur d'utilisations par
+  équipe en match, bonus ajouté au classement général.
+- **Chrono** : boutons + / − pour la durée du match.
+- **Classements** : affichage « à l'issue de la leçon N » (cumul des leçons
+  1 à N), leçon seule ou cycle complet, avec l'évolution des rangs.
+
 ## Contenu du dépôt
 
 - `index.html` — l'application (page unique, HTML/CSS/JS).
